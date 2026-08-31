@@ -1,3 +1,11 @@
+use realtime_stock_market_feed_transmitter::formatter::dramatic_display;
+use realtime_stock_market_feed_transmitter::run;
+use std::process;
+
 fn main() {
-    println!("Hello, world!");
+    dramatic_display("RT Feed Transmitter");
+    if let Err(e) = run() {
+        eprintln!("RT Feed Receiver ecountered an error: {e}");
+        process::exit(1);
+    }
 }

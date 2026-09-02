@@ -3,9 +3,9 @@ use realtime_stock_market_feed_transmitter::run;
 use std::process;
 
 fn main() {
-    dramatic_display("RT Feed Transmitter");
+    dramatic_display("RT Transmitter");
     if let Err(e) = run() {
-        eprintln!("RT Feed Receiver ecountered an error: {e}");
+        eprintln!("RT Transmitter encountered an error: {e}");
         process::exit(1);
     }
 }

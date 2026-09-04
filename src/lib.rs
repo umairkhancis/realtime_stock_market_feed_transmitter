@@ -46,12 +46,13 @@ pub const DEFAULT_CSV: &str = "data/feed.csv";
 pub const DEFAULT_RATE_HZ: u64 = 10_000;
 
 pub type Fallible = Result<(), Box<dyn std::error::Error>>;
-
-// ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
 
-pub fn cmd_gen(args: &Args) -> Fallible {
+// ----------------------------- PUBLIC FUNCTIONS ---------------------------------------------
+
+// Generate a synthetic feed and write it to CSV.
+pub fn generate_signal() -> Fallible {
     // Prepare for writing generated feed.
     // Default config is 100,000 messages at 10,000 messages/second (100 µs apart).
     let config = MarketConfig::default();
@@ -84,11 +85,108 @@ pub fn cmd_gen(args: &Args) -> Fallible {
         symbols_path.display(),
     );
 
-    if !args.has("quiet") {
-        println!();
-        summary::summarise(&messages);
-    }
     Ok(())
+}
+
+pub fn start_transmission() -> Fallible {
+    let rate_hz = DEFAULT_RATE_HZ;
+    let messages = read_feed(BufReader::new(File::open(DEFAULT_CSV)?))?;
+    println!("read {} messages from {DEFAULT_CSV}", messages.len());
+
+    let encoded = EncodedFeed::encode_all(&messages)?;
+    println!(
+        "encoded {} messages into {} payload bytes ({:.1} bytes/datagram average)",
+        encoded.len(),
+        encoded.total_bytes(),
+        encoded.total_bytes() as f64 / encoded.len().max(1) as f64,
+    );
+
+    let cfg = TransmitConfig {
+        dest: DEFAULT_DEST.to_string(),
+        rate_hz,
+        progress_every: Duration::from_secs(1),
+    };
+
+    let report = transmit(&encoded, &cfg)?;
+
+    print_report(&report);
+    Ok(())
+}
+
+pub fn summarise() -> Fallible {
+    let messages = read_feed(BufReader::new(File::open(DEFAULT_CSV)?))?;
+    summary::summarise(&messages);
+    Ok(())
+}
+
+/// Slice 1, unchanged: one hand-built Add Order as the entire payload.
+pub fn transmit_one() -> Fallible {
+    let dest = DEFAULT_DEST;
+    let mut buf = [0u8; ADD_ORDER_LEN];
+    let msg = ItchAddOrder {
+        message_type: b'A',
+        stock_locate: 7,
+        tracking_number: 42,
+        // 09:30:00.000000000 as nanoseconds since midnight.
+        timestamp_bytes: pack_itch_timestamp(34_200_000_000_000)
+            .ok_or("timestamp does not fit in 48 bits")?,
+        order_reference: 1_234_567_890,
+        buy_sell_indicator: b'B',
+        shares: 100,
+        stock: pack_stock_symbol("AAPL").ok_or("invalid stock symbol")?,
+        price: 1_502_500, // $150.25, scaled by 10,000
+    };
+
+    let n = encode_add_order(&msg, &mut buf)?;
+    println!(
+        "ItchAddOrder  {} {} {} shares @ {}",
+        char::from(msg.buy_sell_indicator),
+        unpack_stock_symbol(&{ msg.stock }),
+        { msg.shares },
+        format_price(msg.price),
+    );
+    println!("payload ({n} bytes):\n{}", hex(&buf[..n]));
+
+    // Bind to 0.0.0.0:0 — the kernel picks an ephemeral source port.
+    let sock = UdpSocket::bind("0.0.0.0:0")?;
+    let sent = sock.send_to(&buf[..n], dest)?;
+    if sent != n {
+        return Err(format!("short send: wrote {sent} of {n} bytes").into());
+    }
+
+    println!("sent {sent} bytes {} -> {dest}", sock.local_addr()?);
+    println!("(send_to succeeding means the kernel accepted the datagram, not that it arrived)");
+    Ok(())
+}
+
+/// Resolves a destination, defaulting the port when only a host is given.
+pub fn resolve(dest: &str) -> io::Result<SocketAddr> {
+    let owned;
+    let with_port = if dest.contains(':') {
+        dest
+    } else {
+        owned = format!("{dest}:{DEFAULT_PORT}");
+        &owned
+    };
+    with_port.to_socket_addrs()?.next().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::AddrNotAvailable,
+            format!("{dest} resolved to no address"),
+        )
+    })
+}
+
+// ----------------------------- PRIVATE FUNCTIONS ---------------------------------------------
+// Plumbing
+// ---------------------------------------------------------------------------
+
+/// `data/feed.csv` -> `data/feed.symbols.csv`.
+fn symbols_path(feed: &Path) -> PathBuf {
+    let stem = feed
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    feed.with_file_name(format!("{stem}.symbols.csv"))
 }
 
 // Write the symbol table to a separate CSV file, beside the feed CSV.
@@ -114,203 +212,6 @@ fn write_feed_to_csv(
     let rows = write_feed(&mut file, messages.iter().copied())?;
     file.flush()?;
     Ok(rows)
-}
-
-pub fn cmd_send(args: &Args) -> Fallible {
-    let messages = args.load_messages()?;
-    let rate_hz = args.parse_or("rate", DEFAULT_RATE_HZ)?;
-
-    let encoded = EncodedFeed::encode_all(&messages)?;
-    println!(
-        "encoded {} messages into {} payload bytes ({:.1} bytes/datagram average)",
-        encoded.len(),
-        encoded.total_bytes(),
-        encoded.total_bytes() as f64 / encoded.len().max(1) as f64,
-    );
-
-    let cfg = TransmitConfig {
-        dest: args.get("dest").unwrap_or(DEFAULT_DEST).to_string(),
-        rate_hz,
-        progress_every: Duration::from_secs(1),
-    };
-    let report = transmit(&encoded, &cfg)?;
-    print_report(&report);
-    Ok(())
-}
-
-pub fn cmd_summary(args: &Args) -> Fallible {
-    let messages = args.load_messages()?;
-    summary::summarise(&messages);
-    Ok(())
-}
-
-/// Slice 1, unchanged: one hand-built Add Order as the entire payload.
-pub fn cmd_one(dest: Option<&str>) -> Fallible {
-    let mut dest = dest.unwrap_or(DEFAULT_DEST).to_string();
-    if !dest.contains(':') {
-        dest.push(':');
-        dest.push_str(DEFAULT_PORT);
-    }
-
-    let msg = ItchAddOrder {
-        message_type: b'A',
-        stock_locate: 7,
-        tracking_number: 42,
-        // 09:30:00.000000000 as nanoseconds since midnight.
-        timestamp_bytes: pack_itch_timestamp(34_200_000_000_000)
-            .ok_or("timestamp does not fit in 48 bits")?,
-        order_reference: 1_234_567_890,
-        buy_sell_indicator: b'B',
-        shares: 100,
-        stock: pack_stock_symbol("AAPL").ok_or("invalid stock symbol")?,
-        price: 1_502_500, // $150.25, scaled by 10,000
-    };
-
-    let mut buf = [0u8; ADD_ORDER_LEN];
-    let n = encode_add_order(&msg, &mut buf)?;
-
-    println!(
-        "ItchAddOrder  {} {} {} shares @ {}",
-        char::from(msg.buy_sell_indicator),
-        unpack_stock_symbol(&{ msg.stock }),
-        { msg.shares },
-        format_price(msg.price),
-    );
-    println!("payload ({n} bytes):\n{}", hex(&buf[..n]));
-
-    // Bind to 0.0.0.0:0 — the kernel picks an ephemeral source port.
-    let sock = UdpSocket::bind("0.0.0.0:0")?;
-    let sent = sock.send_to(&buf[..n], dest.as_str())?;
-    if sent != n {
-        return Err(format!("short send: wrote {sent} of {n} bytes").into());
-    }
-
-    println!("sent {sent} bytes {} -> {dest}", sock.local_addr()?);
-    println!("(send_to succeeding means the kernel accepted the datagram, not that it arrived)");
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
-// Plumbing
-// ---------------------------------------------------------------------------
-
-/// Resolves a destination, defaulting the port when only a host is given.
-pub fn resolve(dest: &str) -> io::Result<SocketAddr> {
-    let owned;
-    let with_port = if dest.contains(':') {
-        dest
-    } else {
-        owned = format!("{dest}:{DEFAULT_PORT}");
-        &owned
-    };
-    with_port.to_socket_addrs()?.next().ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::AddrNotAvailable,
-            format!("{dest} resolved to no address"),
-        )
-    })
-}
-
-/// `data/feed.csv` -> `data/feed.symbols.csv`.
-fn symbols_path(feed: &Path) -> PathBuf {
-    let stem = feed
-        .file_stem()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    feed.with_file_name(format!("{stem}.symbols.csv"))
-}
-
-/// A very small `--key value` / `--key=value` parser.
-///
-/// Not a general argument library: it exists so the binary has no dependencies
-/// and so an unrecognised flag is an error rather than a silent no-op.
-pub struct Args {
-    values: Vec<(String, Option<String>)>,
-}
-
-impl Args {
-    pub fn parse(argv: &[String]) -> Result<Args, String> {
-        let mut values = Vec::new();
-        let mut i = 0;
-        while i < argv.len() {
-            let arg = &argv[i];
-            let key = arg.strip_prefix("--").ok_or_else(|| {
-                format!("expected an option starting with --, got {arg:?}\n\n USSSAAAAGE")
-            })?;
-            match key.split_once('=') {
-                Some((k, v)) => {
-                    values.push((k.to_string(), Some(v.to_string())));
-                    i += 1;
-                }
-                None => {
-                    // A flag is bare if the next token is another option.
-                    let next = argv.get(i + 1);
-                    match next {
-                        Some(v) if !v.starts_with("--") => {
-                            values.push((key.to_string(), Some(v.clone())));
-                            i += 2;
-                        }
-                        _ => {
-                            values.push((key.to_string(), None));
-                            i += 1;
-                        }
-                    }
-                }
-            }
-        }
-        Ok(Args { values })
-    }
-
-    pub fn get(&self, key: &str) -> Option<&str> {
-        self.values
-            .iter()
-            .find(|(k, _)| k == key)
-            .and_then(|(_, v)| v.as_deref())
-    }
-
-    pub fn has(&self, key: &str) -> bool {
-        self.values.iter().any(|(k, _)| k == key)
-    }
-
-    pub fn parse_or<T: std::str::FromStr>(&self, key: &str, default: T) -> Result<T, String> {
-        match self.get(key) {
-            None => Ok(default),
-            Some(v) => v
-                .parse()
-                .map_err(|_| format!("--{key} expects a number, got {v:?}")),
-        }
-    }
-
-    pub fn market_config(&self) -> Result<MarketConfig, String> {
-        let default = MarketConfig::default();
-        Ok(MarketConfig {
-            seed: self.parse_or("seed", default.seed)?,
-            count: self.parse_or("count", DEFAULT_MESSAGE_COUNT)?,
-            interval_nanos: self.parse_or("interval-nanos", DEFAULT_INTERVAL_NANOS)?,
-        })
-    }
-
-    /// Either reads the feed from CSV or generates it. Generating is the
-    /// default so the tool has no hidden dependency on a file existing; with
-    /// the same seed and count the two are identical.
-    pub fn load_messages(&self) -> Result<Vec<ItchMessage>, Box<dyn std::error::Error>> {
-        match self.get("csv") {
-            Some(path) => {
-                let messages = read_feed(BufReader::new(File::open(path)?))?;
-                println!("read {} messages from {path}", messages.len());
-                Ok(messages)
-            }
-            None => {
-                let config = self.market_config()?;
-                println!(
-                    "generating {} messages in memory, seed {:#018x} \
-                     (identical to `gen --seed {} --count {}`)",
-                    config.count, config.seed, config.seed, config.count
-                );
-                Ok(MarketSimulator::new(config).collect())
-            }
-        }
-    }
 }
 
 #[cfg(test)]

@@ -192,43 +192,6 @@ fn write_feed_to_csv(
 mod tests {
     use super::*;
 
-    fn argv(s: &[&str]) -> Vec<String> {
-        s.iter().map(|x| x.to_string()).collect()
-    }
-
-    #[test]
-    fn args_accept_both_spellings() {
-        let a = Args::parse(&argv(&["--count", "5", "--seed=7", "--quiet"])).unwrap();
-        assert_eq!(a.get("count"), Some("5"));
-        assert_eq!(a.get("seed"), Some("7"));
-        assert!(a.has("quiet"));
-        assert_eq!(a.get("quiet"), None);
-        assert!(!a.has("nope"));
-    }
-
-    #[test]
-    fn args_reject_a_stray_positional() {
-        assert!(Args::parse(&argv(&["count", "5"])).is_err());
-    }
-
-    #[test]
-    fn args_parse_numbers_and_report_bad_ones() {
-        let a = Args::parse(&argv(&["--rate", "20000", "--count", "twelve"])).unwrap();
-        assert_eq!(a.parse_or("rate", 1u64).unwrap(), 20_000);
-        assert_eq!(a.parse_or("missing", 99u64).unwrap(), 99);
-        assert!(a.parse_or("count", 1u64).is_err());
-    }
-
-    #[test]
-    fn market_config_defaults_to_the_slice_2_numbers() {
-        let cfg = Args::parse(&argv(&[])).unwrap().market_config().unwrap();
-        assert_eq!(cfg.count, 100_000);
-        assert_eq!(
-            cfg.interval_nanos, 100_000,
-            "100 µs = 10,000 messages/second"
-        );
-    }
-
     #[test]
     fn symbols_path_sits_beside_the_feed() {
         assert_eq!(

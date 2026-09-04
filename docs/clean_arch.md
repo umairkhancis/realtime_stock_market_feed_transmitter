@@ -315,3 +315,84 @@ rehoming left a gap (`format`'s price rendering, `cli`'s documented defaults,
 - [Rust Error Handling — std, and the case for concrete library errors](https://doc.rust-lang.org/std/error/trait.Error.html)
 - [clippy: `self_named_module_files`](https://rust-lang.github.io/rust-clippy/master/#self_named_module_files) — the no-`mod.rs` layout
 - Robert C. Martin, *Clean Architecture* — the dependency rule, ports and adapters, presenters
+
+----
+
+## Explain each layer from outward to inward
+
+Walking in from the edge. Note that the first two are siblings in the same ring, not stacked — neither may name the other.
+
+---
+
+main.rs — 22 lines above everything
+
+dramatic_display("RT Transmitter");
+let args: Vec<String> = env::args().skip(1).collect();
+if let Err(e) = cli::run(&args) { eprintln!("..."); process::exit(1); }
+
+Only the two things a binary can do that a library can't: read the process environment, set an exit code. Everything else is in the lib crate so it can be tested.
+
+Ring 3a — presentation/
+
+Human-facing. The only layer allowed to name a third-party crate.
+
+- cli.rs — the composition root. USAGE, DEFAULT_CSV, and run(&[String]) dispatching the five commands. Each handler is the same shape: construct the concrete adapters, call one use case, render the result. This is the only file in the crate that knows a FeedStore is a CSV file.
+- console.rs — ConsoleObserver, which implements TransmitObserver, plus print_report. This is where every println! from the old transmit path ended up.
+- format.rs — hex(), format_price(). Pure, no I/O.
+- summary.rs — the summary command's report: message mix, per-symbol table, per-second timeline, realized volatility.
+- banner.rs — figlet-rs and colored, quarantined. Delete this file and both dependencies go with it.
+
+Ring 3b — infrastructure/
+
+Machine-facing. Every module here implements a port declared one ring in.
+
+- csv/serde.rs — HEADER, FeedError, write_feed, read_feed, write_symbol_table. Generic over impl Write / impl BufRead, so its tests round-trip through a Vec<u8> and never create a file.
+- csv/store.rs — CsvFeedStore, the FeedStore impl. All the File, PathBuf and create_dir_all in the program is in this one file.
+- net.rs — DEFAULT_PORT and resolve(), which used to live at the crate root where the send loop reached up for it.
+- net/udp.rs — UdpFeedTransmitter (the send loop, FeedTransmitter) and UdpDatagramSink (slice 1's one-shot, DatagramSink). The only file that touches UdpSocket.
+- time/pacer.rs — Pacer: absolute deadlines from a fixed origin, sleep until 60 µs out then spin.
+
+Ring 1 — application/
+
+What the program does, with no mention of a socket, a file, or a terminal.
+
+- ports.rs — the four traits (FeedStore, FeedTransmitter, DatagramSink, TransmitObserver) and their data types (StoredFeed, TransmitStart, TransmitProgress, SilentObserver). Each port carries an associated Error type so the adapter keeps its own concrete error.
+- transmit.rs — TransmitConfig, PaceStats, TransmitReport, and the transmit_feed use case.
+- generate.rs — generate_feed(&impl FeedStore, MarketConfig) -> Result<StoredFeed>. Two lines of body.
+- slice_one.rs — the hand-built slice-1 message and its short-send check.
+- encoded_feed.rs — EncodedFeed: one contiguous Vec<u8> plus an (offset, len) index, so nothing variable happens inside the 100 µs budget.
+
+Ring 0 — domain/
+
+What an ITCH feed is. No std::io, std::net, std::fs, std::thread, std::time, no println!, no dependencies.
+
+- message.rs — the seven #[repr(C, packed)] records, the ItchMessage sum type, and the smart constructors (pack_itch_timestamp, pack_stock_symbol) that return Option rather than truncating.
+- codec.rs — the wire format: the 11-byte shared prefix, the seven fixed lengths, encode/decode dispatch, CodecError.
+- market/symbols.rs — SymbolSpec and the eight names; symbol_table().
+- market/config.rs — MarketConfig and the session constants.
+- market/simulator.rs — the generator: regime rolls, price steps, and the seven message builders that keep every reference live.
+- rng.rs — SplitMix64. Concrete, not a port, because the domain needs reproducibility rather than randomness.
+
+---
+
+The whole thing, traced
+
+main.rs                                  cli::run(["transmit"])
+└─ presentation::cli::transmit()         builds CsvFeedStore, UdpFeedTransmitter,
+   │                                     ConsoleObserver, TransmitConfig::default()
+   └─ application::transmit_feed(store, transmitter, cfg, observer)
+      ├─ store.load()          ──port──▶ CsvFeedStore ─▶ csv::serde::read_feed ─▶ domain::message
+      ├─ observer.on_feed_loaded()  ──port──▶ ConsoleObserver ─▶ println!
+      ├─ EncodedFeed::encode_all()  ─────────────────────────▶ domain::codec::encode
+      ├─ observer.on_feed_encoded() ──port──▶ ConsoleObserver
+      └─ transmitter.transmit() ──port──▶ UdpFeedTransmitter
+                                          ├─ net::resolve, bind, connect
+                                          ├─ observer.on_start()
+                                          └─ loop: pacer.wait(i)
+                                                   sock.send(feed.datagram(i))
+                                                   observer.on_progress()
+   └─ presentation::console::print_report(&report)
+
+Every arrow crossing a ring boundary inward is a direct call. Every arrow crossing outward goes through a port. That's the whole design in one picture — transmit_feed is the only function that sees all four collaborators, and it names none of them concretely.
+
+✻ Brewed for 53s · done 10:27 AM

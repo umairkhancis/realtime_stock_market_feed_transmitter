@@ -1,3 +1,21 @@
+//! The ITCH 5.0 records themselves — the entities everything else is about.
+//!
+//! Two kinds of thing live here. The seven `#[repr(C, packed)]` structs are a
+//! faithful transcription of what NASDAQ specifies, and [`ItchMessage`] is the
+//! sum type the rest of the crate actually passes around, because "an ITCH
+//! message" has to be a single type before you can write `encode(&ItchMessage)`
+//! or hold a heterogeneous run of them.
+//!
+//! The rest are smart constructors for the two field encodings that can fail:
+//! [`pack_itch_timestamp`] and [`pack_stock_symbol`] both return `Option`
+//! rather than truncating. That is *parse, don't validate* — an
+//! `ItchAddOrder` you are holding cannot contain a 49-bit timestamp or a
+//! nine-character ticker, because there is no way to build one.
+//!
+//! Note that `#[repr(C, packed)]` describes how these sit in memory and is
+//! *never* the wire format; see [`crate::domain::codec`] for why that
+//! distinction is load-bearing.
+
 // ==========================================
 // 1. ADD ORDER MESSAGES
 // ==========================================
@@ -231,6 +249,7 @@ impl ItchMessage {
 
     /// Encoded size in bytes — always the fixed size for this message type.
     pub fn wire_len(&self) -> usize {
-        crate::codec::wire_len(self.message_type()).expect("every variant has a wire length")
+        crate::domain::codec::wire_len(self.message_type())
+            .expect("every variant has a wire length")
     }
 }

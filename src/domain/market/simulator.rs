@@ -23,28 +23,15 @@
 //! on disk and a stream generated in memory from the same seed are the same
 //! bytes, message for message.
 
-use crate::model::{
+use crate::domain::message::{
     ItchAddOrder, ItchAddOrderAttributed, ItchMessage, ItchOrderCancel, ItchOrderDelete,
     ItchOrderExecuted, ItchOrderExecutedWithPrice, ItchOrderReplace, pack_itch_timestamp,
     pack_stock_symbol,
 };
-use crate::rng::Rng;
+use crate::domain::rng::Rng;
 
-/// 09:30:00.000000000 as nanoseconds since midnight — the opening bell.
-pub const SESSION_OPEN_NANOS: u64 = 34_200_000_000_000;
-
-/// ITCH prices are integers scaled by 10,000.
-pub const PRICE_SCALE: u32 = 10_000;
-
-/// One cent, in ITCH price units.
-pub const TICK: u32 = 100;
-
-/// Simulated time between consecutive messages at the slice-2 rate of
-/// 10,000 messages/second.
-pub const DEFAULT_INTERVAL_NANOS: u64 = 100_000;
-
-/// The slice-2 target: 100,000 messages.
-pub const DEFAULT_MESSAGE_COUNT: u64 = 100_000;
+use super::config::{MarketConfig, SESSION_OPEN_NANOS};
+use super::symbols::{SYMBOLS, TICK};
 
 /// Mids are re-drawn every this many messages, so the price process runs on a
 /// wall clock (10 ms steps at 10k msg/s) rather than on message arrivals. A
@@ -65,82 +52,6 @@ const MAX_LIVE_ORDERS: usize = 256;
 
 /// Market participant identifiers used by attributed ('F') adds.
 const MPIDS: [&[u8; 4]; 6] = [b"NSDQ", b"ARCA", b"BATS", b"EDGX", b"IEXG", b"CDRG"];
-
-/// A symbol's static character: where it opens, how much it moves, how much of
-/// the tape it takes, and how hard it reacts to a market-wide shock.
-#[derive(Debug, Clone, Copy)]
-pub struct SymbolSpec {
-    pub ticker: &'static str,
-    /// Opening price in ITCH units (scaled by 10,000).
-    pub open_price: u32,
-    /// Baseline standard deviation of a 10 ms price step, in ticks.
-    pub tick_sigma: f64,
-    /// Baseline share of the tape (relative, not normalised).
-    pub weight: f64,
-    /// Sensitivity to the market-wide shock: 0 shrugs it off, 1 takes it fully.
-    pub shock_beta: f64,
-}
-
-/// The universe. Eight names spanning three orders of magnitude in price and a
-/// wide spread of volatility, so a receiver plotting them has something to see.
-pub const SYMBOLS: [SymbolSpec; 8] = [
-    SymbolSpec {
-        ticker: "AAPL",
-        open_price: 150_0000,
-        tick_sigma: 0.10,
-        weight: 1.00,
-        shock_beta: 0.6,
-    },
-    SymbolSpec {
-        ticker: "MSFT",
-        open_price: 380_0000,
-        tick_sigma: 0.14,
-        weight: 0.85,
-        shock_beta: 0.5,
-    },
-    SymbolSpec {
-        ticker: "NVDA",
-        open_price: 120_0000,
-        tick_sigma: 0.22,
-        weight: 1.30,
-        shock_beta: 1.0,
-    },
-    SymbolSpec {
-        ticker: "TSLA",
-        open_price: 250_0000,
-        tick_sigma: 0.30,
-        weight: 1.10,
-        shock_beta: 0.9,
-    },
-    SymbolSpec {
-        ticker: "AMZN",
-        open_price: 175_0000,
-        tick_sigma: 0.13,
-        weight: 0.70,
-        shock_beta: 0.5,
-    },
-    SymbolSpec {
-        ticker: "SPY",
-        open_price: 500_0000,
-        tick_sigma: 0.08,
-        weight: 1.60,
-        shock_beta: 0.3,
-    },
-    SymbolSpec {
-        ticker: "GME",
-        open_price: 25_0000,
-        tick_sigma: 0.45,
-        weight: 0.45,
-        shock_beta: 1.4,
-    },
-    SymbolSpec {
-        ticker: "F",
-        open_price: 12_0000,
-        tick_sigma: 0.06,
-        weight: 0.60,
-        shock_beta: 0.2,
-    },
-];
 
 #[derive(Debug, Clone, Copy)]
 struct LiveOrder {
@@ -169,27 +80,6 @@ struct SymbolState {
     /// Per-symbol order-reference sequence. See [`SymbolState::next_reference`].
     next_reference_seq: u64,
     live: Vec<LiveOrder>,
-}
-
-/// How the simulated session is laid out in time.
-#[derive(Debug, Clone, Copy)]
-pub struct MarketConfig {
-    pub seed: u64,
-    pub count: u64,
-    /// Simulated nanoseconds between messages. At the slice-2 rate this equals
-    /// the real inter-packet gap, so a receiver can compare arrival deltas
-    /// against message timestamps directly.
-    pub interval_nanos: u64,
-}
-
-impl Default for MarketConfig {
-    fn default() -> Self {
-        MarketConfig {
-            seed: 0x5EED_1CE0_1D5E_ED17,
-            count: DEFAULT_MESSAGE_COUNT,
-            interval_nanos: DEFAULT_INTERVAL_NANOS,
-        }
-    }
 }
 
 /// The generator. Yields exactly `config.count` messages, then stops.
@@ -231,16 +121,6 @@ impl MarketSimulator {
             index: 0,
             next_match_number: 1,
         }
-    }
-
-    /// The locate → ticker map a receiver needs to make sense of 'D'/'E'/'X'/'U'
-    /// messages, which carry no ASCII symbol.
-    pub fn symbol_table() -> Vec<(u16, &'static str, u32)> {
-        SYMBOLS
-            .iter()
-            .enumerate()
-            .map(|(i, s)| ((i + 1) as u16, s.ticker, s.open_price))
-            .collect()
     }
 
     pub fn config(&self) -> MarketConfig {
@@ -694,8 +574,9 @@ fn build_replace(rng: &mut Rng, sym: &mut SymbolState, ts: [u8; 6]) -> ItchMessa
 
 #[cfg(test)]
 mod tests {
+    use super::super::symbol_table;
     use super::*;
-    use crate::model::unpack_stock_symbol;
+    use crate::domain::message::unpack_stock_symbol;
     use std::collections::{HashMap, HashSet};
 
     fn generate(count: u64) -> Vec<ItchMessage> {
@@ -983,10 +864,8 @@ mod tests {
 
     #[test]
     fn adds_carry_the_ticker_and_it_matches_the_locate() {
-        let table: HashMap<u16, &str> = MarketSimulator::symbol_table()
-            .into_iter()
-            .map(|(l, t, _)| (l, t))
-            .collect();
+        let table: HashMap<u16, &str> =
+            symbol_table().into_iter().map(|(l, t, _)| (l, t)).collect();
         let mut checked = 0;
         for msg in generate(20_000) {
             let (locate, stock) = match msg {

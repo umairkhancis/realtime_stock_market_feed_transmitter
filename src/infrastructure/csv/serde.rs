@@ -19,8 +19,7 @@
 use std::fmt;
 use std::io::{self, BufRead, Write};
 
-use crate::market::MarketSimulator;
-use crate::model::{
+use crate::domain::message::{
     ItchAddOrder, ItchAddOrderAttributed, ItchMessage, ItchOrderCancel, ItchOrderDelete,
     ItchOrderExecuted, ItchOrderExecutedWithPrice, ItchOrderReplace, pack_itch_timestamp,
     unpack_stock_symbol,
@@ -123,9 +122,15 @@ where
 
 /// The locate → ticker map. Every message carries a locate; only adds carry the
 /// ticker, so without this a receiver cannot name the instrument in a delete.
-pub fn write_symbol_table<W: Write>(out: &mut W) -> io::Result<()> {
+///
+/// The entries are handed in rather than read from
+/// [`crate::domain::market::symbol_table`] directly. An adapter depending on the
+/// domain would point inward and be legal, but it would also let the *file
+/// format* decide which universe gets written; taking the rows as an argument
+/// keeps that choice where it belongs, in the use case.
+pub fn write_symbol_table<W: Write>(out: &mut W, entries: &[(u16, &str, u32)]) -> io::Result<()> {
     writeln!(out, "stock_locate,ticker,open_price")?;
-    for (locate, ticker, open) in MarketSimulator::symbol_table() {
+    for (locate, ticker, open) in entries {
         writeln!(out, "{locate},{ticker},{open}")?;
     }
     Ok(())
@@ -312,7 +317,7 @@ fn parse_row(line: &str, no: u64) -> Result<ItchMessage, FeedError> {
         }
     };
     let stock = |v: &str| -> Result<[u8; 8], FeedError> {
-        crate::model::pack_stock_symbol(v).ok_or_else(|| FeedError::BadField {
+        crate::domain::message::pack_stock_symbol(v).ok_or_else(|| FeedError::BadField {
             line: no,
             column: "stock",
             value: v.to_string(),
@@ -424,7 +429,7 @@ fn mpid(v: &str) -> Option<[u8; 4]> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::market::{MarketConfig, MarketSimulator};
+    use crate::domain::market::{MarketConfig, MarketSimulator, symbol_table};
 
     fn round_trip(count: u64) -> (Vec<ItchMessage>, Vec<ItchMessage>) {
         let cfg = MarketConfig {
@@ -455,11 +460,11 @@ mod tests {
     #[test]
     fn csv_round_trip_preserves_the_encoded_bytes() {
         let (original, parsed) = round_trip(5_000);
-        let mut a = [0u8; crate::codec::MAX_MESSAGE_LEN];
-        let mut b = [0u8; crate::codec::MAX_MESSAGE_LEN];
+        let mut a = [0u8; crate::domain::codec::MAX_MESSAGE_LEN];
+        let mut b = [0u8; crate::domain::codec::MAX_MESSAGE_LEN];
         for (x, y) in original.iter().zip(parsed.iter()) {
-            let na = crate::codec::encode(x, &mut a).unwrap();
-            let nb = crate::codec::encode(y, &mut b).unwrap();
+            let na = crate::domain::codec::encode(x, &mut a).unwrap();
+            let nb = crate::domain::codec::encode(y, &mut b).unwrap();
             assert_eq!(a[..na], b[..nb]);
         }
     }
@@ -552,7 +557,7 @@ mod tests {
     #[test]
     fn symbol_table_covers_every_locate_the_feed_uses() {
         let mut table: Vec<u8> = Vec::new();
-        write_symbol_table(&mut table).unwrap();
+        write_symbol_table(&mut table, &symbol_table()).unwrap();
         let text = String::from_utf8(table).unwrap();
         let locates: Vec<&str> = text
             .lines()

@@ -19,8 +19,14 @@
 //!
 //! Lateness is measured, not assumed. If the machine cannot hold the rate, the
 //! stats say so instead of the run quietly producing 6,000 packets per second.
+//! What it measures — [`PaceStats`] — is declared one ring in, in
+//! [`crate::application::transmit`], because it is part of what a transmit run
+//! *reports*. Depending inward like this is what keeps the pacer a swappable
+//! mechanism.
 
 use std::time::{Duration, Instant};
+
+use crate::application::transmit::PaceStats;
 
 /// How long before the deadline to stop sleeping and start spinning.
 ///
@@ -28,38 +34,6 @@ use std::time::{Duration, Instant};
 /// resolution is a scheduler tick, not a nanosecond. Above it, spinning is pure
 /// waste. 60 µs is a compromise sized for a 100 µs interval.
 pub const SPIN_MARGIN: Duration = Duration::from_micros(60);
-
-/// What the pacer actually achieved, as opposed to what it was asked for.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct PaceStats {
-    /// Deadlines waited on.
-    pub waits: u64,
-    /// Deadlines already in the past when we got to them.
-    pub late: u64,
-    /// Worst single overshoot.
-    pub max_lateness: Duration,
-    /// Summed overshoot, for a mean.
-    total_lateness_nanos: u128,
-}
-
-impl PaceStats {
-    pub fn mean_lateness(&self) -> Duration {
-        if self.waits == 0 {
-            Duration::ZERO
-        } else {
-            Duration::from_nanos((self.total_lateness_nanos / self.waits as u128) as u64)
-        }
-    }
-
-    /// Fraction of deadlines missed, in `[0, 1]`.
-    pub fn late_fraction(&self) -> f64 {
-        if self.waits == 0 {
-            0.0
-        } else {
-            self.late as f64 / self.waits as f64
-        }
-    }
-}
 
 /// A uniform-rate clock. Construct it, then call [`Pacer::wait`] with a
 /// monotonically increasing index.
@@ -145,14 +119,7 @@ impl Pacer {
         }
 
         let lateness = Instant::now().saturating_duration_since(deadline);
-        self.stats.waits += 1;
-        self.stats.total_lateness_nanos += lateness.as_nanos();
-        if lateness > Duration::ZERO {
-            self.stats.late += 1;
-            if lateness > self.stats.max_lateness {
-                self.stats.max_lateness = lateness;
-            }
-        }
+        self.stats.record(lateness);
         lateness
     }
 }

@@ -23,12 +23,12 @@
 //! on disk and a stream generated in memory from the same seed are the same
 //! bytes, message for message.
 
-use crate::model::{
+use crate::domain::model::{
     ItchAddOrder, ItchAddOrderAttributed, ItchMessage, ItchOrderCancel, ItchOrderDelete,
     ItchOrderExecuted, ItchOrderExecutedWithPrice, ItchOrderReplace, pack_itch_timestamp,
     pack_stock_symbol,
 };
-use crate::rng::Rng;
+use crate::domain::rng::Rng;
 
 /// 09:30:00.000000000 as nanoseconds since midnight — the opening bell.
 pub const SESSION_OPEN_NANOS: u64 = 34_200_000_000_000;
@@ -695,7 +695,7 @@ fn build_replace(rng: &mut Rng, sym: &mut SymbolState, ts: [u8; 6]) -> ItchMessa
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::unpack_stock_symbol;
+    use crate::domain::model::unpack_stock_symbol;
     use std::collections::{HashMap, HashSet};
 
     fn generate(count: u64) -> Vec<ItchMessage> {

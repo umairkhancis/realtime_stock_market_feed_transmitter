@@ -12,8 +12,8 @@
 //! A receiver that has all the data will reproduce these numbers. A receiver
 //! that lost datagrams will not, and the shape of the disagreement says where.
 
-use crate::formatter::format_price;
-use crate::model::ItchMessage;
+use crate::adapters::formatter::format_price;
+use crate::domain::model::ItchMessage;
 
 /// The symbol the timeline focuses on. NVDA: mid-range volatility, the highest
 /// share of the tape, and a shock beta of 1.0, so it shows the session's shape
@@ -120,7 +120,7 @@ fn print_symbols(msgs: &[ItchMessage]) {
         "ticker", "msgs", "share", "adds", "open", "last", "low", "high"
     );
 
-    let table = crate::market::MarketSimulator::symbol_table();
+    let table = crate::domain::market::MarketSimulator::symbol_table();
     for (locate, ticker, _open) in table {
         let mut msg_count = 0u64;
         let mut adds = 0u64;
@@ -239,7 +239,7 @@ fn print_timeline(msgs: &[ItchMessage], first_ts: u64) {
         return;
     }
 
-    let n_symbols = crate::market::SYMBOLS.len();
+    let n_symbols = crate::domain::market::SYMBOLS.len();
     let mut msg_counts = vec![0u64; n_buckets];
     let mut exec_counts = vec![0u64; n_buckets];
     let mut exec_volume = vec![0u64; n_buckets];
@@ -270,7 +270,7 @@ fn print_timeline(msgs: &[ItchMessage], first_ts: u64) {
         .fold(0.0f64, f64::max)
         .max(f64::MIN_POSITIVE);
 
-    let focus_ticker = crate::market::SYMBOLS[FOCUS_LOCATE as usize - 1].ticker;
+    let focus_ticker = crate::domain::market::SYMBOLS[FOCUS_LOCATE as usize - 1].ticker;
     println!(
         "  {:>4} {:>8} {:>7} {:>10} {:>8}  {:<24}",
         "t+s",
@@ -283,7 +283,7 @@ fn print_timeline(msgs: &[ItchMessage], first_ts: u64) {
     for b in 0..n_buckets {
         let busiest = (1..=n_symbols)
             .max_by_key(|&l| per_symbol[b][l])
-            .map(|l| crate::market::SYMBOLS[l - 1].ticker)
+            .map(|l| crate::domain::market::SYMBOLS[l - 1].ticker)
             .unwrap_or("-");
         let bar = "#".repeat(((vols[b] / peak_vol) * 24.0).round() as usize);
         println!(
@@ -320,7 +320,7 @@ fn realized_vol(mids: &[Option<f64>], start: usize, len: usize) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::market::{MarketConfig, MarketSimulator};
+    use crate::domain::market::{MarketConfig, MarketSimulator};
 
     #[test]
     fn clock_renders_the_opening_bell() {

@@ -1,4 +1,4 @@
-use realtime_stock_market_feed_transmitter::formatter::dramatic_display;
+use realtime_stock_market_feed_transmitter::adapters::formatter::dramatic_display;
 use realtime_stock_market_feed_transmitter::{
     Fallible, generate_signal, start_transmission, summarise, transmit_one,
 };

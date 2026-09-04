@@ -16,9 +16,9 @@ use std::io;
 use std::net::UdpSocket;
 use std::time::Duration;
 
-use crate::codec::{MAX_MESSAGE_LEN, encode};
-use crate::model::ItchMessage;
-use crate::pacer::{PaceStats, Pacer};
+use crate::domain::codec::{MAX_MESSAGE_LEN, encode};
+use crate::domain::model::ItchMessage;
+use crate::infrastructure::pacer::{PaceStats, Pacer};
 
 #[derive(Debug, Clone)]
 pub struct TransmitConfig {
@@ -100,7 +100,7 @@ pub struct EncodedFeed {
 }
 
 impl EncodedFeed {
-    pub fn encode_all(msgs: &[ItchMessage]) -> Result<Self, crate::codec::CodecError> {
+    pub fn encode_all(msgs: &[ItchMessage]) -> Result<Self, crate::domain::codec::CodecError> {
         let mut bytes = Vec::with_capacity(msgs.len() * MAX_MESSAGE_LEN);
         let mut index = Vec::with_capacity(msgs.len());
         let mut scratch = [0u8; MAX_MESSAGE_LEN];
@@ -247,8 +247,8 @@ pub fn print_report(report: &TransmitReport) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::codec::decode;
-    use crate::market::{MarketConfig, MarketSimulator};
+    use crate::domain::codec::decode;
+    use crate::domain::market::{MarketConfig, MarketSimulator};
 
     fn feed(count: u64) -> Vec<ItchMessage> {
         MarketSimulator::new(MarketConfig {

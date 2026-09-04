@@ -98,8 +98,14 @@ fn print_message_mix(msgs: &[ItchMessage]) {
     let peak = counts.iter().copied().max().unwrap_or(1).max(1);
     for (i, &t) in types.iter().enumerate() {
         let share = counts[i] as f64 / total;
-        let bar = "#".repeat(((counts[i] * 40 / peak) as usize).max(if counts[i] > 0 { 1 } else { 0 }));
-        println!("  {:<28} {:>7}  {:>5.2}%  {bar}", label(t), counts[i], share * 100.0);
+        let bar =
+            "#".repeat(((counts[i] * 40 / peak) as usize).max(if counts[i] > 0 { 1 } else { 0 }));
+        println!(
+            "  {:<28} {:>7}  {:>5.2}%  {bar}",
+            label(t),
+            counts[i],
+            share * 100.0
+        );
     }
 }
 
@@ -147,7 +153,10 @@ fn print_symbols(msgs: &[ItchMessage]) {
                 format_price(lo),
                 format_price(hi),
             ),
-            None => println!("  {ticker:<7} {msg_count:>8} {share:>6.2}% {adds:>7} {:>12}", "-"),
+            None => println!(
+                "  {ticker:<7} {msg_count:>8} {share:>6.2}% {adds:>7} {:>12}",
+                "-"
+            ),
         }
     }
     println!("  (prices are resting-order prices, not trades — the book's edges, not its mid)");
@@ -183,7 +192,9 @@ fn focus_mids(msgs: &[ItchMessage], first_ts: u64, n_sub: usize) -> Vec<Option<f
         if m.stock_locate() != FOCUS_LOCATE {
             continue;
         }
-        let Some((side, price)) = add_side_price(m) else { continue };
+        let Some((side, price)) = add_side_price(m) else {
+            continue;
+        };
         let s = ((m.timestamp_nanos() - first_ts) / SUB_BUCKET_NANOS) as usize;
         if s >= n_sub {
             continue;
@@ -253,12 +264,21 @@ fn print_timeline(msgs: &[ItchMessage], first_ts: u64) {
     let vols: Vec<f64> = (0..n_buckets)
         .map(|b| realized_vol(&mids, b * per_bucket_subs, per_bucket_subs))
         .collect();
-    let peak_vol = vols.iter().cloned().fold(0.0f64, f64::max).max(f64::MIN_POSITIVE);
+    let peak_vol = vols
+        .iter()
+        .cloned()
+        .fold(0.0f64, f64::max)
+        .max(f64::MIN_POSITIVE);
 
     let focus_ticker = crate::market::SYMBOLS[FOCUS_LOCATE as usize - 1].ticker;
     println!(
         "  {:>4} {:>8} {:>7} {:>10} {:>8}  {:<24}",
-        "t+s", "msgs", "execs", "exec vol", "busiest", format!("{focus_ticker} volatility")
+        "t+s",
+        "msgs",
+        "execs",
+        "exec vol",
+        "busiest",
+        format!("{focus_ticker} volatility")
     );
     for b in 0..n_buckets {
         let busiest = (1..=n_symbols)
@@ -273,7 +293,9 @@ fn print_timeline(msgs: &[ItchMessage], first_ts: u64) {
     }
     println!();
     println!("  Volatility is the standard deviation of successive 100 ms changes in the");
-    println!("  {focus_ticker} touch midpoint, scaled to the busiest second. The generator superimposes");
+    println!(
+        "  {focus_ticker} touch midpoint, scaled to the busiest second. The generator superimposes"
+    );
     println!("  an opening burst, a mid-session shock and a close ramp — if the receiver's copy");
     println!("  of this table has a different shape, it did not get all the messages.");
 }
@@ -282,8 +304,11 @@ fn print_timeline(msgs: &[ItchMessage], first_ts: u64) {
 /// a realized-volatility estimate that is insensitive to the level of the price
 /// and to how many orders happened to print in a given window.
 fn realized_vol(mids: &[Option<f64>], start: usize, len: usize) -> f64 {
-    let means: Vec<f64> =
-        mids[start.min(mids.len())..(start + len).min(mids.len())].iter().flatten().copied().collect();
+    let means: Vec<f64> = mids[start.min(mids.len())..(start + len).min(mids.len())]
+        .iter()
+        .flatten()
+        .copied()
+        .collect();
     if means.len() < 3 {
         return 0.0;
     }
@@ -309,28 +334,42 @@ mod tests {
         let flat: Vec<Option<f64>> = vec![Some(100.0); 10];
         assert_eq!(realized_vol(&flat, 0, 10), 0.0);
 
-        let moving: Vec<Option<f64>> =
-            (0..10).map(|i| Some(100.0 + (i % 3) as f64 * 7.0)).collect();
+        let moving: Vec<Option<f64>> = (0..10)
+            .map(|i| Some(100.0 + (i % 3) as f64 * 7.0))
+            .collect();
         assert!(realized_vol(&moving, 0, 10) > 0.0);
 
         // Windows with no two-sided quote are skipped, not counted as zero.
-        let gappy: Vec<Option<f64>> =
-            moving.iter().enumerate().map(|(i, m)| if i % 2 == 0 { *m } else { None }).collect();
+        let gappy: Vec<Option<f64>> = moving
+            .iter()
+            .enumerate()
+            .map(|(i, m)| if i % 2 == 0 { *m } else { None })
+            .collect();
         assert!(realized_vol(&gappy, 0, 10) > 0.0);
 
         // Too few samples to say anything.
         assert_eq!(realized_vol(&flat, 0, 2), 0.0);
         assert_eq!(realized_vol(&[], 0, 10), 0.0);
-        assert_eq!(realized_vol(&flat, 50, 10), 0.0, "a start past the end must not panic");
+        assert_eq!(
+            realized_vol(&flat, 50, 10),
+            0.0,
+            "a start past the end must not panic"
+        );
     }
 
     /// The estimator has to actually see the shock, or the timeline is decoration.
     #[test]
     fn realized_vol_separates_the_shock_from_the_calm() {
-        let msgs: Vec<_> =
-            MarketSimulator::new(MarketConfig { count: 100_000, ..Default::default() }).collect();
+        let msgs: Vec<_> = MarketSimulator::new(MarketConfig {
+            count: 100_000,
+            ..Default::default()
+        })
+        .collect();
         let mids = focus_mids(&msgs, msgs[0].timestamp_nanos(), 100);
-        assert!(mids.iter().filter(|m| m.is_some()).count() > 90, "the touch is mostly two-sided");
+        assert!(
+            mids.iter().filter(|m| m.is_some()).count() > 90,
+            "the touch is mostly two-sided"
+        );
         // Second 3 is calm; second 5 holds the shock at p = 0.55.
         let calm = realized_vol(&mids, 30, 10);
         let shock = realized_vol(&mids, 50, 10);
@@ -338,7 +377,10 @@ mod tests {
         // And the estimator has to be quiet in the calm, or the bar chart is
         // noise: a 10 ms sigma of 0.22 ticks compounds to well under a dollar
         // over 100 ms.
-        assert!(calm < 500.0, "calm volatility {calm:.0} is too noisy to read");
+        assert!(
+            calm < 500.0,
+            "calm volatility {calm:.0} is too noisy to read"
+        );
     }
 
     /// Summarising must not panic on the degenerate inputs — an empty feed, or
@@ -346,11 +388,17 @@ mod tests {
     #[test]
     fn survives_tiny_feeds() {
         summarise(&[]);
-        let one: Vec<_> =
-            MarketSimulator::new(MarketConfig { count: 1, ..Default::default() }).collect();
+        let one: Vec<_> = MarketSimulator::new(MarketConfig {
+            count: 1,
+            ..Default::default()
+        })
+        .collect();
         summarise(&one);
-        let few: Vec<_> =
-            MarketSimulator::new(MarketConfig { count: 50, ..Default::default() }).collect();
+        let few: Vec<_> = MarketSimulator::new(MarketConfig {
+            count: 50,
+            ..Default::default()
+        })
+        .collect();
         summarise(&few);
     }
 }

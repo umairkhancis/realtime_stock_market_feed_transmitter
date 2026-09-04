@@ -15,7 +15,9 @@ pub struct Rng {
 impl Rng {
     pub fn new(seed: u64) -> Self {
         // Avoid the all-zero state producing a degenerate first output.
-        Rng { state: seed ^ 0x9E37_79B9_7F4A_7C15 }
+        Rng {
+            state: seed ^ 0x9E37_79B9_7F4A_7C15,
+        }
     }
 
     #[inline]
@@ -118,7 +120,10 @@ mod tests {
             assert!(v < 6);
             seen[v as usize] = true;
         }
-        assert!(seen.iter().all(|&s| s), "every bucket should be hit in 10k draws");
+        assert!(
+            seen.iter().all(|&s| s),
+            "every bucket should be hit in 10k draws"
+        );
         assert_eq!(r.below(1), 0);
     }
 
@@ -180,6 +185,10 @@ mod tests {
         assert_eq!(counts[2], 0, "a zero weight must never be picked");
         let ratio = counts[1] as f64 / counts[0] as f64;
         assert!((ratio - 3.0).abs() < 0.1, "ratio {ratio} is not ~3");
-        assert_eq!(r.weighted_index(&[0.0, 0.0]), 0, "all-zero weights must not panic");
+        assert_eq!(
+            r.weighted_index(&[0.0, 0.0]),
+            0,
+            "all-zero weights must not panic"
+        );
     }
 }

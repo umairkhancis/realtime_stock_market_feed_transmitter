@@ -21,9 +21,9 @@ use std::io::{self, BufRead, Write};
 
 use crate::market::MarketSimulator;
 use crate::model::{
-    pack_itch_timestamp, unpack_stock_symbol, ItchAddOrder, ItchAddOrderAttributed, ItchMessage,
-    ItchOrderCancel, ItchOrderDelete, ItchOrderExecuted, ItchOrderExecutedWithPrice,
-    ItchOrderReplace,
+    ItchAddOrder, ItchAddOrderAttributed, ItchMessage, ItchOrderCancel, ItchOrderDelete,
+    ItchOrderExecuted, ItchOrderExecutedWithPrice, ItchOrderReplace, pack_itch_timestamp,
+    unpack_stock_symbol,
 };
 
 /// The header row, and the authority on column order.
@@ -36,31 +36,55 @@ const COLUMNS: usize = 14;
 pub enum FeedError {
     Io(io::Error),
     /// A row did not have [`COLUMNS`] fields.
-    WrongColumnCount { line: u64, expected: usize, got: usize },
+    WrongColumnCount {
+        line: u64,
+        expected: usize,
+        got: usize,
+    },
     /// A field was missing, malformed, or out of range.
-    BadField { line: u64, column: &'static str, value: String },
+    BadField {
+        line: u64,
+        column: &'static str,
+        value: String,
+    },
     /// The type byte in column 2 is not one we speak.
-    UnknownMessageType { line: u64, value: String },
+    UnknownMessageType {
+        line: u64,
+        value: String,
+    },
     /// The header row is absent or renamed — refuse rather than silently
     /// misreading a file whose columns moved.
-    BadHeader { got: String },
+    BadHeader {
+        got: String,
+    },
 }
 
 impl fmt::Display for FeedError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             FeedError::Io(e) => write!(f, "{e}"),
-            FeedError::WrongColumnCount { line, expected, got } => {
+            FeedError::WrongColumnCount {
+                line,
+                expected,
+                got,
+            } => {
                 write!(f, "line {line}: expected {expected} columns, got {got}")
             }
-            FeedError::BadField { line, column, value } => {
+            FeedError::BadField {
+                line,
+                column,
+                value,
+            } => {
                 write!(f, "line {line}: bad value {value:?} in column {column}")
             }
             FeedError::UnknownMessageType { line, value } => {
                 write!(f, "line {line}: unknown message type {value:?}")
             }
             FeedError::BadHeader { got } => {
-                write!(f, "not a feed CSV: expected header\n  {HEADER}\ngot\n  {got}")
+                write!(
+                    f,
+                    "not a feed CSV: expected header\n  {HEADER}\ngot\n  {got}"
+                )
             }
         }
     }
@@ -214,7 +238,11 @@ pub fn read_feed<R: BufRead>(input: R) -> Result<Vec<ItchMessage>, FeedError> {
     let mut lines = input.lines();
 
     match lines.next() {
-        None => return Err(FeedError::BadHeader { got: String::from("<empty file>") }),
+        None => {
+            return Err(FeedError::BadHeader {
+                got: String::from("<empty file>"),
+            });
+        }
         Some(header) => {
             let header = header?;
             if header.trim_end_matches('\r') != HEADER {
@@ -239,7 +267,11 @@ pub fn read_feed<R: BufRead>(input: R) -> Result<Vec<ItchMessage>, FeedError> {
 fn parse_row(line: &str, no: u64) -> Result<ItchMessage, FeedError> {
     let f: Vec<&str> = line.split(',').collect();
     if f.len() != COLUMNS {
-        return Err(FeedError::WrongColumnCount { line: no, expected: COLUMNS, got: f.len() });
+        return Err(FeedError::WrongColumnCount {
+            line: no,
+            expected: COLUMNS,
+            got: f.len(),
+        });
     }
 
     let num = |v: &str, column: &'static str| -> Result<u64, FeedError> {
@@ -272,7 +304,11 @@ fn parse_row(line: &str, no: u64) -> Result<ItchMessage, FeedError> {
         if b.len() == 1 {
             Ok(b[0])
         } else {
-            Err(FeedError::BadField { line: no, column, value: v.to_string() })
+            Err(FeedError::BadField {
+                line: no,
+                column,
+                value: v.to_string(),
+            })
         }
     };
     let stock = |v: &str| -> Result<[u8; 8], FeedError> {
@@ -283,9 +319,12 @@ fn parse_row(line: &str, no: u64) -> Result<ItchMessage, FeedError> {
         })
     };
 
-    let timestamp_bytes = pack_itch_timestamp(num(f[1], "timestamp_ns")?).ok_or_else(|| {
-        FeedError::BadField { line: no, column: "timestamp_ns", value: f[1].to_string() }
-    })?;
+    let timestamp_bytes =
+        pack_itch_timestamp(num(f[1], "timestamp_ns")?).ok_or_else(|| FeedError::BadField {
+            line: no,
+            column: "timestamp_ns",
+            value: f[1].to_string(),
+        })?;
     let stock_locate = u16f(f[3], "stock_locate")?;
     let tracking_number = u16f(f[4], "tracking_number")?;
     let message_type = one_byte(f[2], "msg_type")?;
@@ -363,7 +402,12 @@ fn parse_row(line: &str, no: u64) -> Result<ItchMessage, FeedError> {
             shares: u32f(f[9], "shares")?,
             price: u32f(f[10], "price")?,
         }),
-        _ => return Err(FeedError::UnknownMessageType { line: no, value: f[2].to_string() }),
+        _ => {
+            return Err(FeedError::UnknownMessageType {
+                line: no,
+                value: f[2].to_string(),
+            });
+        }
     })
 }
 
@@ -383,7 +427,10 @@ mod tests {
     use crate::market::{MarketConfig, MarketSimulator};
 
     fn round_trip(count: u64) -> (Vec<ItchMessage>, Vec<ItchMessage>) {
-        let cfg = MarketConfig { count, ..Default::default() };
+        let cfg = MarketConfig {
+            count,
+            ..Default::default()
+        };
         let original: Vec<ItchMessage> = MarketSimulator::new(cfg).collect();
         let mut csv: Vec<u8> = Vec::new();
         let rows = write_feed(&mut csv, original.clone()).unwrap();
@@ -419,7 +466,10 @@ mod tests {
 
     #[test]
     fn every_row_has_the_declared_columns() {
-        let cfg = MarketConfig { count: 3_000, ..Default::default() };
+        let cfg = MarketConfig {
+            count: 3_000,
+            ..Default::default()
+        };
         let mut csv: Vec<u8> = Vec::new();
         write_feed(&mut csv, MarketSimulator::new(cfg)).unwrap();
         let text = String::from_utf8(csv).unwrap();
@@ -432,13 +482,19 @@ mod tests {
                 COLUMNS,
                 "row {i} has the wrong column count: {line}"
             );
-            assert!(!line.contains(",,,,,,,,,,,,,"), "row {i} is entirely empty: {line}");
+            assert!(
+                !line.contains(",,,,,,,,,,,,,"),
+                "row {i} is entirely empty: {line}"
+            );
         }
     }
 
     #[test]
     fn seq_column_counts_from_zero_without_gaps() {
-        let cfg = MarketConfig { count: 1_000, ..Default::default() };
+        let cfg = MarketConfig {
+            count: 1_000,
+            ..Default::default()
+        };
         let mut csv: Vec<u8> = Vec::new();
         write_feed(&mut csv, MarketSimulator::new(cfg)).unwrap();
         let text = String::from_utf8(csv).unwrap();
@@ -450,8 +506,14 @@ mod tests {
     #[test]
     fn rejects_a_file_whose_columns_moved() {
         let bad = "seq,timestamp_ns,msg_type\n0,1,A\n";
-        assert!(matches!(read_feed(bad.as_bytes()), Err(FeedError::BadHeader { .. })));
-        assert!(matches!(read_feed("".as_bytes()), Err(FeedError::BadHeader { .. })));
+        assert!(matches!(
+            read_feed(bad.as_bytes()),
+            Err(FeedError::BadHeader { .. })
+        ));
+        assert!(matches!(
+            read_feed("".as_bytes()),
+            Err(FeedError::BadHeader { .. })
+        ));
     }
 
     #[test]
@@ -472,7 +534,11 @@ mod tests {
         short.push_str("\n0,1,A,1,0\n");
         assert!(matches!(
             read_feed(short.as_bytes()),
-            Err(FeedError::WrongColumnCount { line: 2, got: 5, .. })
+            Err(FeedError::WrongColumnCount {
+                line: 2,
+                got: 5,
+                ..
+            })
         ));
 
         let mut unknown = String::from(HEADER);
@@ -488,10 +554,17 @@ mod tests {
         let mut table: Vec<u8> = Vec::new();
         write_symbol_table(&mut table).unwrap();
         let text = String::from_utf8(table).unwrap();
-        let locates: Vec<&str> = text.lines().skip(1).map(|l| l.split(',').next().unwrap()).collect();
+        let locates: Vec<&str> = text
+            .lines()
+            .skip(1)
+            .map(|l| l.split(',').next().unwrap())
+            .collect();
         assert_eq!(locates, ["1", "2", "3", "4", "5", "6", "7", "8"]);
 
-        let cfg = MarketConfig { count: 20_000, ..Default::default() };
+        let cfg = MarketConfig {
+            count: 20_000,
+            ..Default::default()
+        };
         for msg in MarketSimulator::new(cfg) {
             assert!(locates.contains(&msg.stock_locate().to_string().as_str()));
         }

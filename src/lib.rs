@@ -31,12 +31,14 @@ use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use codec::{encode_add_order, ADD_ORDER_LEN};
+use codec::{ADD_ORDER_LEN, encode_add_order};
 use feed::{read_feed, write_feed, write_symbol_table};
 use formatter::{format_price, hex};
-use market::{MarketConfig, MarketSimulator, DEFAULT_INTERVAL_NANOS, DEFAULT_MESSAGE_COUNT};
-use model::{pack_itch_timestamp, pack_stock_symbol, unpack_stock_symbol, ItchAddOrder, ItchMessage};
-use transmit::{print_report, transmit, EncodedFeed, TransmitConfig};
+use market::{DEFAULT_INTERVAL_NANOS, DEFAULT_MESSAGE_COUNT, MarketConfig, MarketSimulator};
+use model::{
+    ItchAddOrder, ItchMessage, pack_itch_timestamp, pack_stock_symbol, unpack_stock_symbol,
+};
+use transmit::{EncodedFeed, TransmitConfig, print_report, transmit};
 
 pub const DEFAULT_DEST: &str = "192.168.252.18:9000";
 pub const DEFAULT_PORT: &str = "9000";
@@ -229,13 +231,19 @@ pub fn resolve(dest: &str) -> io::Result<SocketAddr> {
         &owned
     };
     with_port.to_socket_addrs()?.next().ok_or_else(|| {
-        io::Error::new(io::ErrorKind::AddrNotAvailable, format!("{dest} resolved to no address"))
+        io::Error::new(
+            io::ErrorKind::AddrNotAvailable,
+            format!("{dest} resolved to no address"),
+        )
     })
 }
 
 /// `data/feed.csv` -> `data/feed.symbols.csv`.
 fn symbols_path(feed: &Path) -> PathBuf {
-    let stem = feed.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let stem = feed
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
     feed.with_file_name(format!("{stem}.symbols.csv"))
 }
 
@@ -281,7 +289,10 @@ impl Args {
     }
 
     fn get(&self, key: &str) -> Option<&str> {
-        self.values.iter().find(|(k, _)| k == key).and_then(|(_, v)| v.as_deref())
+        self.values
+            .iter()
+            .find(|(k, _)| k == key)
+            .and_then(|(_, v)| v.as_deref())
     }
 
     fn has(&self, key: &str) -> bool {
@@ -291,7 +302,9 @@ impl Args {
     fn parse_or<T: std::str::FromStr>(&self, key: &str, default: T) -> Result<T, String> {
         match self.get(key) {
             None => Ok(default),
-            Some(v) => v.parse().map_err(|_| format!("--{key} expects a number, got {v:?}")),
+            Some(v) => v
+                .parse()
+                .map_err(|_| format!("--{key} expects a number, got {v:?}")),
         }
     }
 
@@ -362,13 +375,22 @@ mod tests {
     fn market_config_defaults_to_the_slice_2_numbers() {
         let cfg = Args::parse(&argv(&[])).unwrap().market_config().unwrap();
         assert_eq!(cfg.count, 100_000);
-        assert_eq!(cfg.interval_nanos, 100_000, "100 µs = 10,000 messages/second");
+        assert_eq!(
+            cfg.interval_nanos, 100_000,
+            "100 µs = 10,000 messages/second"
+        );
     }
 
     #[test]
     fn symbols_path_sits_beside_the_feed() {
-        assert_eq!(symbols_path(Path::new("data/feed.csv")), Path::new("data/feed.symbols.csv"));
-        assert_eq!(symbols_path(Path::new("run1.csv")), Path::new("run1.symbols.csv"));
+        assert_eq!(
+            symbols_path(Path::new("data/feed.csv")),
+            Path::new("data/feed.symbols.csv")
+        );
+        assert_eq!(
+            symbols_path(Path::new("run1.csv")),
+            Path::new("run1.symbols.csv")
+        );
     }
 
     #[test]
@@ -384,7 +406,10 @@ mod tests {
     /// the same seed are the same feed.
     #[test]
     fn csv_and_in_memory_generation_agree() {
-        let cfg = MarketConfig { count: 4_000, ..Default::default() };
+        let cfg = MarketConfig {
+            count: 4_000,
+            ..Default::default()
+        };
         let generated: Vec<ItchMessage> = MarketSimulator::new(cfg).collect();
         let mut csv = Vec::new();
         write_feed(&mut csv, generated.iter().copied()).unwrap();

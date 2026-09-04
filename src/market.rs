@@ -24,9 +24,9 @@
 //! bytes, message for message.
 
 use crate::model::{
-    pack_itch_timestamp, pack_stock_symbol, ItchAddOrder, ItchAddOrderAttributed, ItchMessage,
-    ItchOrderCancel, ItchOrderDelete, ItchOrderExecuted, ItchOrderExecutedWithPrice,
-    ItchOrderReplace,
+    ItchAddOrder, ItchAddOrderAttributed, ItchMessage, ItchOrderCancel, ItchOrderDelete,
+    ItchOrderExecuted, ItchOrderExecutedWithPrice, ItchOrderReplace, pack_itch_timestamp,
+    pack_stock_symbol,
 };
 use crate::rng::Rng;
 
@@ -84,14 +84,62 @@ pub struct SymbolSpec {
 /// The universe. Eight names spanning three orders of magnitude in price and a
 /// wide spread of volatility, so a receiver plotting them has something to see.
 pub const SYMBOLS: [SymbolSpec; 8] = [
-    SymbolSpec { ticker: "AAPL", open_price: 150_0000, tick_sigma: 0.10, weight: 1.00, shock_beta: 0.6 },
-    SymbolSpec { ticker: "MSFT", open_price: 380_0000, tick_sigma: 0.14, weight: 0.85, shock_beta: 0.5 },
-    SymbolSpec { ticker: "NVDA", open_price: 120_0000, tick_sigma: 0.22, weight: 1.30, shock_beta: 1.0 },
-    SymbolSpec { ticker: "TSLA", open_price: 250_0000, tick_sigma: 0.30, weight: 1.10, shock_beta: 0.9 },
-    SymbolSpec { ticker: "AMZN", open_price: 175_0000, tick_sigma: 0.13, weight: 0.70, shock_beta: 0.5 },
-    SymbolSpec { ticker: "SPY",  open_price: 500_0000, tick_sigma: 0.08, weight: 1.60, shock_beta: 0.3 },
-    SymbolSpec { ticker: "GME",  open_price: 25_0000,  tick_sigma: 0.45, weight: 0.45, shock_beta: 1.4 },
-    SymbolSpec { ticker: "F",    open_price: 12_0000,  tick_sigma: 0.06, weight: 0.60, shock_beta: 0.2 },
+    SymbolSpec {
+        ticker: "AAPL",
+        open_price: 150_0000,
+        tick_sigma: 0.10,
+        weight: 1.00,
+        shock_beta: 0.6,
+    },
+    SymbolSpec {
+        ticker: "MSFT",
+        open_price: 380_0000,
+        tick_sigma: 0.14,
+        weight: 0.85,
+        shock_beta: 0.5,
+    },
+    SymbolSpec {
+        ticker: "NVDA",
+        open_price: 120_0000,
+        tick_sigma: 0.22,
+        weight: 1.30,
+        shock_beta: 1.0,
+    },
+    SymbolSpec {
+        ticker: "TSLA",
+        open_price: 250_0000,
+        tick_sigma: 0.30,
+        weight: 1.10,
+        shock_beta: 0.9,
+    },
+    SymbolSpec {
+        ticker: "AMZN",
+        open_price: 175_0000,
+        tick_sigma: 0.13,
+        weight: 0.70,
+        shock_beta: 0.5,
+    },
+    SymbolSpec {
+        ticker: "SPY",
+        open_price: 500_0000,
+        tick_sigma: 0.08,
+        weight: 1.60,
+        shock_beta: 0.3,
+    },
+    SymbolSpec {
+        ticker: "GME",
+        open_price: 25_0000,
+        tick_sigma: 0.45,
+        weight: 0.45,
+        shock_beta: 1.4,
+    },
+    SymbolSpec {
+        ticker: "F",
+        open_price: 12_0000,
+        tick_sigma: 0.06,
+        weight: 0.60,
+        shock_beta: 0.2,
+    },
 ];
 
 #[derive(Debug, Clone, Copy)]
@@ -272,9 +320,8 @@ impl MarketSimulator {
 
     fn timestamp(&self) -> [u8; 6] {
         let nanos = SESSION_OPEN_NANOS + self.index * self.config.interval_nanos;
-        pack_itch_timestamp(nanos).expect(
-            "simulated session ran past midnight; lower --count or --interval-nanos",
-        )
+        pack_itch_timestamp(nanos)
+            .expect("simulated session ran past midnight; lower --count or --interval-nanos")
     }
 
     /// Produces the next message, or `None` once `count` have been produced.
@@ -345,11 +392,19 @@ enum Kind {
 /// orders never trade, executions are the rare and interesting event.
 fn choose_kind(rng: &mut Rng, live: usize, mv: f64) -> Kind {
     if live < MIN_LIVE_ORDERS {
-        return if rng.chance(0.92) { Kind::Add } else { Kind::AddAttributed };
+        return if rng.chance(0.92) {
+            Kind::Add
+        } else {
+            Kind::AddAttributed
+        };
     }
     if live >= MAX_LIVE_ORDERS {
         // The book is full; only messages that remove an order are allowed.
-        return if rng.chance(0.7) { Kind::Delete } else { Kind::Execute };
+        return if rng.chance(0.7) {
+            Kind::Delete
+        } else {
+            Kind::Execute
+        };
     }
 
     // Trading picks up when the market moves; resting-order churn does not.
@@ -404,7 +459,11 @@ fn draw_side(rng: &mut Rng) -> u8 {
 /// always an exact multiple of a tick.
 fn quote_price(mid: f64, side: u8, offset_ticks: u32) -> u32 {
     let offset = (offset_ticks * TICK) as f64;
-    let raw = if side == b'B' { mid - offset } else { mid + offset };
+    let raw = if side == b'B' {
+        mid - offset
+    } else {
+        mid + offset
+    };
     let ticks = (raw / TICK as f64).round().max(1.0);
     // Clamp well inside u32 so a runaway walk cannot wrap the price.
     let ticks = ticks.min((u32::MAX / TICK) as f64);
@@ -413,7 +472,12 @@ fn quote_price(mid: f64, side: u8, offset_ticks: u32) -> u32 {
 
 fn build_add(rng: &mut Rng, sym: &mut SymbolState, ts: [u8; 6]) -> ItchMessage {
     let (reference, side, shares, price) = new_resting_order(rng, sym);
-    sym.live.push(LiveOrder { reference, side, shares, price });
+    sym.live.push(LiveOrder {
+        reference,
+        side,
+        shares,
+        price,
+    });
     ItchMessage::AddOrder(ItchAddOrder {
         message_type: b'A',
         stock_locate: sym.locate,
@@ -429,7 +493,12 @@ fn build_add(rng: &mut Rng, sym: &mut SymbolState, ts: [u8; 6]) -> ItchMessage {
 
 fn build_add_attributed(rng: &mut Rng, sym: &mut SymbolState, ts: [u8; 6]) -> ItchMessage {
     let (reference, side, shares, price) = new_resting_order(rng, sym);
-    sym.live.push(LiveOrder { reference, side, shares, price });
+    sym.live.push(LiveOrder {
+        reference,
+        side,
+        shares,
+        price,
+    });
     let mpid = *MPIDS[rng.below(MPIDS.len() as u64) as usize];
     ItchMessage::AddOrderAttributed(ItchAddOrderAttributed {
         message_type: b'F',
@@ -476,8 +545,16 @@ fn best_index(sym: &SymbolState, side: u8) -> Option<usize> {
         best = match best {
             None => Some((i, o.price)),
             Some((bi, bp)) => {
-                let better = if side == b'B' { o.price > bp } else { o.price < bp };
-                if better { Some((i, o.price)) } else { Some((bi, bp)) }
+                let better = if side == b'B' {
+                    o.price > bp
+                } else {
+                    o.price < bp
+                };
+                if better {
+                    Some((i, o.price))
+                } else {
+                    Some((bi, bp))
+                }
             }
         };
     }
@@ -591,9 +668,18 @@ fn build_replace(rng: &mut Rng, sym: &mut SymbolState, ts: [u8; 6]) -> ItchMessa
     let i = rng.below(sym.live.len() as u64) as usize;
     let old = sym.live.swap_remove(i);
     let shares = draw_shares(rng);
-    let price = quote_price(sym.mid, old.side, sym.half_spread_ticks + draw_depth_ticks(rng));
+    let price = quote_price(
+        sym.mid,
+        old.side,
+        sym.half_spread_ticks + draw_depth_ticks(rng),
+    );
     let reference = sym.next_reference();
-    sym.live.push(LiveOrder { reference, side: old.side, shares, price });
+    sym.live.push(LiveOrder {
+        reference,
+        side: old.side,
+        shares,
+        price,
+    });
     ItchMessage::OrderReplace(ItchOrderReplace {
         message_type: b'U',
         stock_locate: sym.locate,
@@ -613,7 +699,11 @@ mod tests {
     use std::collections::{HashMap, HashSet};
 
     fn generate(count: u64) -> Vec<ItchMessage> {
-        MarketSimulator::new(MarketConfig { count, ..Default::default() }).collect()
+        MarketSimulator::new(MarketConfig {
+            count,
+            ..Default::default()
+        })
+        .collect()
     }
 
     #[test]
@@ -625,9 +715,24 @@ mod tests {
 
     #[test]
     fn a_seed_names_a_market() {
-        let a: Vec<_> = MarketSimulator::new(MarketConfig { seed: 99, count: 5_000, ..Default::default() }).collect();
-        let b: Vec<_> = MarketSimulator::new(MarketConfig { seed: 99, count: 5_000, ..Default::default() }).collect();
-        let c: Vec<_> = MarketSimulator::new(MarketConfig { seed: 100, count: 5_000, ..Default::default() }).collect();
+        let a: Vec<_> = MarketSimulator::new(MarketConfig {
+            seed: 99,
+            count: 5_000,
+            ..Default::default()
+        })
+        .collect();
+        let b: Vec<_> = MarketSimulator::new(MarketConfig {
+            seed: 99,
+            count: 5_000,
+            ..Default::default()
+        })
+        .collect();
+        let c: Vec<_> = MarketSimulator::new(MarketConfig {
+            seed: 100,
+            count: 5_000,
+            ..Default::default()
+        })
+        .collect();
         assert_eq!(a, b, "same seed must reproduce the stream exactly");
         assert_ne!(a, c);
     }
@@ -641,7 +746,11 @@ mod tests {
     fn every_reference_is_live_when_used() {
         replay_and_check(&generate(100_000));
         for seed in [0u64, 1, 7, 0xDEAD_BEEF, u64::MAX] {
-            let cfg = MarketConfig { seed, count: 30_000, ..Default::default() };
+            let cfg = MarketConfig {
+                seed,
+                count: 30_000,
+                ..Default::default()
+            };
             replay_and_check(&MarketSimulator::new(cfg).collect::<Vec<_>>());
         }
     }
@@ -664,8 +773,15 @@ mod tests {
                 }
                 ItchMessage::OrderExecuted(m) => {
                     let (r, n) = (m.order_reference, m.shares);
-                    let e = book.get_mut(&r).unwrap_or_else(|| panic!("dangling {r} {}", where_()));
-                    assert_eq!(e.0, { m.stock_locate }, "executed on the wrong book {}", where_());
+                    let e = book
+                        .get_mut(&r)
+                        .unwrap_or_else(|| panic!("dangling {r} {}", where_()));
+                    assert_eq!(
+                        e.0,
+                        { m.stock_locate },
+                        "executed on the wrong book {}",
+                        where_()
+                    );
                     assert!(n > 0 && n <= e.1, "over-execution of {r} {}", where_());
                     e.1 -= n;
                     if e.1 == 0 {
@@ -674,7 +790,9 @@ mod tests {
                 }
                 ItchMessage::OrderExecutedWithPrice(m) => {
                     let (r, n) = (m.order_reference, m.shares);
-                    let e = book.get_mut(&r).unwrap_or_else(|| panic!("dangling {r} {}", where_()));
+                    let e = book
+                        .get_mut(&r)
+                        .unwrap_or_else(|| panic!("dangling {r} {}", where_()));
                     assert!(n > 0 && n <= e.1, "over-execution of {r} {}", where_());
                     e.1 -= n;
                     if e.1 == 0 {
@@ -683,9 +801,16 @@ mod tests {
                 }
                 ItchMessage::OrderCancel(m) => {
                     let (r, n) = (m.order_reference, m.canceled_shares);
-                    let e = book.get_mut(&r).unwrap_or_else(|| panic!("dangling {r} {}", where_()));
+                    let e = book
+                        .get_mut(&r)
+                        .unwrap_or_else(|| panic!("dangling {r} {}", where_()));
                     // A cancel never empties an order; that is what 'D' is for.
-                    assert!(n > 0 && n < e.1, "cancel of {n}/{} on {r} {}", e.1, where_());
+                    assert!(
+                        n > 0 && n < e.1,
+                        "cancel of {n}/{} on {r} {}",
+                        e.1,
+                        where_()
+                    );
                     e.1 -= n;
                 }
                 ItchMessage::OrderDelete(m) => {
@@ -694,19 +819,27 @@ mod tests {
                 }
                 ItchMessage::OrderReplace(m) => {
                     let (old, new) = (m.original_order_reference, m.new_order_reference);
-                    let prev = book.remove(&old).unwrap_or_else(|| panic!("dangling {old} {}", where_()));
+                    let prev = book
+                        .remove(&old)
+                        .unwrap_or_else(|| panic!("dangling {old} {}", where_()));
                     assert!(ever_seen.insert(new), "reference {new} reused {}", where_());
                     assert_eq!(prev.0, { m.stock_locate });
                     book.insert(new, (m.stock_locate, m.shares));
                 }
             }
         }
-        assert!(!book.is_empty(), "the session should end with resting orders");
+        assert!(
+            !book.is_empty(),
+            "the session should end with resting orders"
+        );
     }
 
     #[test]
     fn timestamps_are_monotonic_and_match_the_emission_schedule() {
-        let cfg = MarketConfig { count: 20_000, ..Default::default() };
+        let cfg = MarketConfig {
+            count: 20_000,
+            ..Default::default()
+        };
         for (i, msg) in MarketSimulator::new(cfg).enumerate() {
             let expected = SESSION_OPEN_NANOS + i as u64 * cfg.interval_nanos;
             assert_eq!(msg.timestamp_nanos(), expected, "at message {i}");
@@ -722,14 +855,26 @@ mod tests {
             *counts.entry(m.message_type()).or_default() += 1;
         }
         for t in [b'A', b'F', b'E', b'C', b'X', b'D', b'U'] {
-            assert!(counts.get(&t).copied().unwrap_or(0) > 0, "no {} messages", t as char);
+            assert!(
+                counts.get(&t).copied().unwrap_or(0) > 0,
+                "no {} messages",
+                t as char
+            );
         }
         let total = msgs.len() as f64;
         let share = |t: u8| counts.get(&t).copied().unwrap_or(0) as f64 / total;
         // Adds must outnumber removals or the book drains; deletes must be the
         // bulk of the rest or it grows without bound.
-        assert!(share(b'A') > 0.35 && share(b'A') < 0.60, "A share {}", share(b'A'));
-        assert!(share(b'D') > 0.20 && share(b'D') < 0.45, "D share {}", share(b'D'));
+        assert!(
+            share(b'A') > 0.35 && share(b'A') < 0.60,
+            "A share {}",
+            share(b'A')
+        );
+        assert!(
+            share(b'D') > 0.20 && share(b'D') < 0.45,
+            "D share {}",
+            share(b'D')
+        );
         assert!(share(b'C') < 0.05, "C should be rare, got {}", share(b'C'));
     }
 
@@ -789,13 +934,21 @@ mod tests {
                 }
             }
         }
-        assert!(calm.len() > 50 && shock.len() > 50, "not enough samples: {} / {}", calm.len(), shock.len());
+        assert!(
+            calm.len() > 50 && shock.len() > 50,
+            "not enough samples: {} / {}",
+            calm.len(),
+            shock.len()
+        );
         let sd = |v: &[f64]| {
             let mean = v.iter().sum::<f64>() / v.len() as f64;
             (v.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / v.len() as f64).sqrt()
         };
         let (c, s) = (sd(&calm), sd(&shock));
-        assert!(s > c * 1.5, "shock sd {s:.0} is not clearly above calm sd {c:.0}");
+        assert!(
+            s > c * 1.5,
+            "shock sd {s:.0} is not clearly above calm sd {c:.0}"
+        );
     }
 
     #[test]
@@ -830,8 +983,10 @@ mod tests {
 
     #[test]
     fn adds_carry_the_ticker_and_it_matches_the_locate() {
-        let table: HashMap<u16, &str> =
-            MarketSimulator::symbol_table().into_iter().map(|(l, t, _)| (l, t)).collect();
+        let table: HashMap<u16, &str> = MarketSimulator::symbol_table()
+            .into_iter()
+            .map(|(l, t, _)| (l, t))
+            .collect();
         let mut checked = 0;
         for msg in generate(20_000) {
             let (locate, stock) = match msg {
@@ -851,9 +1006,18 @@ mod tests {
         let peak = MarketSimulator::market_vol_multiplier(0.55);
         let open = MarketSimulator::market_vol_multiplier(0.0);
         let close = MarketSimulator::market_vol_multiplier(0.999);
-        assert!(peak > calm * 5.0, "shock {peak} is not a shock next to {calm}");
-        assert!(open > calm * 2.0, "the open should be busy: {open} vs {calm}");
-        assert!(close > calm * 2.0, "the close should be busy: {close} vs {calm}");
+        assert!(
+            peak > calm * 5.0,
+            "shock {peak} is not a shock next to {calm}"
+        );
+        assert!(
+            open > calm * 2.0,
+            "the open should be busy: {open} vs {calm}"
+        );
+        assert!(
+            close > calm * 2.0,
+            "the close should be busy: {close} vs {calm}"
+        );
         assert!(calm >= 1.0);
     }
 }

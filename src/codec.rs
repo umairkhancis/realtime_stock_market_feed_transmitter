@@ -21,8 +21,8 @@
 use std::fmt;
 
 use crate::model::{
-    unpack_itch_timestamp, ItchAddOrder, ItchAddOrderAttributed, ItchMessage, ItchOrderCancel,
-    ItchOrderDelete, ItchOrderExecuted, ItchOrderExecutedWithPrice, ItchOrderReplace,
+    ItchAddOrder, ItchAddOrderAttributed, ItchMessage, ItchOrderCancel, ItchOrderDelete,
+    ItchOrderExecuted, ItchOrderExecutedWithPrice, ItchOrderReplace, unpack_itch_timestamp,
 };
 
 /// Bytes shared by every message type before the type-specific body.
@@ -91,7 +91,10 @@ impl fmt::Display for CodecError {
                 write!(f, "output buffer too small: need {need} bytes, got {got}")
             }
             CodecError::WrongLength { expected, got } => {
-                write!(f, "wrong payload length: expected {expected} bytes, got {got}")
+                write!(
+                    f,
+                    "wrong payload length: expected {expected} bytes, got {got}"
+                )
             }
             CodecError::Empty => write!(f, "empty payload: no message type byte"),
             CodecError::UnknownMessageType(b) => {
@@ -130,7 +133,10 @@ pub fn decode(src: &[u8]) -> Result<ItchMessage, CodecError> {
     let &type_byte = src.first().ok_or(CodecError::Empty)?;
     let expected = wire_len(type_byte).ok_or(CodecError::UnknownMessageType(type_byte))?;
     if src.len() != expected {
-        return Err(CodecError::WrongLength { expected, got: src.len() });
+        return Err(CodecError::WrongLength {
+            expected,
+            got: src.len(),
+        });
     }
     Ok(match type_byte {
         MSG_TYPE_ADD_ORDER => ItchMessage::AddOrder(decode_add_order(src)?),
@@ -154,7 +160,10 @@ pub fn decode(src: &[u8]) -> Result<ItchMessage, CodecError> {
 
 fn check_out(out: &[u8], need: usize) -> Result<(), CodecError> {
     if out.len() < need {
-        Err(CodecError::BufferTooSmall { need, got: out.len() })
+        Err(CodecError::BufferTooSmall {
+            need,
+            got: out.len(),
+        })
     } else {
         Ok(())
     }
@@ -162,7 +171,10 @@ fn check_out(out: &[u8], need: usize) -> Result<(), CodecError> {
 
 fn check_in(src: &[u8], expected: usize, type_byte: u8) -> Result<(), CodecError> {
     if src.len() != expected {
-        return Err(CodecError::WrongLength { expected, got: src.len() });
+        return Err(CodecError::WrongLength {
+            expected,
+            got: src.len(),
+        });
     }
     if src[0] != type_byte {
         return Err(CodecError::UnknownMessageType(src[0]));
@@ -209,8 +221,7 @@ pub fn encode_add_order(msg: &ItchAddOrder, out: &mut [u8]) -> Result<usize, Cod
     // Copy each field out of the packed struct before touching it; taking a
     // reference into a packed struct is a hard error (E0793).
     let (locate, tracking, ts) = (msg.stock_locate, msg.tracking_number, msg.timestamp_bytes);
-    let (order_ref, shares, stock, price) =
-        (msg.order_reference, msg.shares, msg.stock, msg.price);
+    let (order_ref, shares, stock, price) = (msg.order_reference, msg.shares, msg.stock, msg.price);
 
     put_header(out, MSG_TYPE_ADD_ORDER, locate, tracking, ts);
     out[11..19].copy_from_slice(&order_ref.to_be_bytes());
@@ -247,8 +258,13 @@ pub fn encode_add_order_attributed(
 ) -> Result<usize, CodecError> {
     check_out(out, ADD_ORDER_ATTRIBUTED_LEN)?;
     let (locate, tracking, ts) = (msg.stock_locate, msg.tracking_number, msg.timestamp_bytes);
-    let (order_ref, shares, stock, price, attribution) =
-        (msg.order_reference, msg.shares, msg.stock, msg.price, msg.attribution);
+    let (order_ref, shares, stock, price, attribution) = (
+        msg.order_reference,
+        msg.shares,
+        msg.stock,
+        msg.price,
+        msg.attribution,
+    );
 
     put_header(out, MSG_TYPE_ADD_ORDER_ATTRIBUTED, locate, tracking, ts);
     out[11..19].copy_from_slice(&order_ref.to_be_bytes());
@@ -288,8 +304,7 @@ pub fn decode_add_order_attributed(src: &[u8]) -> Result<ItchAddOrderAttributed,
 pub fn encode_order_executed(msg: &ItchOrderExecuted, out: &mut [u8]) -> Result<usize, CodecError> {
     check_out(out, ORDER_EXECUTED_LEN)?;
     let (locate, tracking, ts) = (msg.stock_locate, msg.tracking_number, msg.timestamp_bytes);
-    let (order_ref, shares, match_number) =
-        (msg.order_reference, msg.shares, msg.match_number);
+    let (order_ref, shares, match_number) = (msg.order_reference, msg.shares, msg.match_number);
 
     put_header(out, MSG_TYPE_ORDER_EXECUTED, locate, tracking, ts);
     out[11..19].copy_from_slice(&order_ref.to_be_bytes());
@@ -322,10 +337,20 @@ pub fn encode_order_executed_with_price(
 ) -> Result<usize, CodecError> {
     check_out(out, ORDER_EXECUTED_WITH_PRICE_LEN)?;
     let (locate, tracking, ts) = (msg.stock_locate, msg.tracking_number, msg.timestamp_bytes);
-    let (order_ref, shares, match_number, execution_price) =
-        (msg.order_reference, msg.shares, msg.match_number, msg.execution_price);
+    let (order_ref, shares, match_number, execution_price) = (
+        msg.order_reference,
+        msg.shares,
+        msg.match_number,
+        msg.execution_price,
+    );
 
-    put_header(out, MSG_TYPE_ORDER_EXECUTED_WITH_PRICE, locate, tracking, ts);
+    put_header(
+        out,
+        MSG_TYPE_ORDER_EXECUTED_WITH_PRICE,
+        locate,
+        tracking,
+        ts,
+    );
     out[11..19].copy_from_slice(&order_ref.to_be_bytes());
     out[19..23].copy_from_slice(&shares.to_be_bytes());
     out[23..31].copy_from_slice(&match_number.to_be_bytes());
@@ -337,7 +362,11 @@ pub fn encode_order_executed_with_price(
 pub fn decode_order_executed_with_price(
     src: &[u8],
 ) -> Result<ItchOrderExecutedWithPrice, CodecError> {
-    check_in(src, ORDER_EXECUTED_WITH_PRICE_LEN, MSG_TYPE_ORDER_EXECUTED_WITH_PRICE)?;
+    check_in(
+        src,
+        ORDER_EXECUTED_WITH_PRICE_LEN,
+        MSG_TYPE_ORDER_EXECUTED_WITH_PRICE,
+    )?;
     Ok(ItchOrderExecutedWithPrice {
         message_type: src[0],
         stock_locate: get_u16(src, 1),
@@ -566,7 +595,13 @@ mod tests {
         let mut buf = [0u8; ADD_ORDER_LEN];
         let n = encode_add_order(&golden_message(), &mut buf).unwrap();
         assert_eq!(n, ADD_ORDER_LEN);
-        assert_eq!(buf, GOLDEN, "\n  got: {}\n  want: {}", crate::hex(&buf), crate::hex(&GOLDEN));
+        assert_eq!(
+            buf,
+            GOLDEN,
+            "\n  got: {}\n  want: {}",
+            crate::hex(&buf),
+            crate::hex(&GOLDEN)
+        );
     }
 
     #[test]
@@ -612,7 +647,11 @@ mod tests {
         assert_eq!(wire_len(b'X'), Some(23));
         assert_eq!(wire_len(b'D'), Some(19));
         assert_eq!(wire_len(b'U'), Some(35));
-        assert_eq!(wire_len(b'P'), None, "unknown types must be unknown, not guessed");
+        assert_eq!(
+            wire_len(b'P'),
+            None,
+            "unknown types must be unknown, not guessed"
+        );
         // Every length starts with the shared header.
         for t in [b'A', b'F', b'E', b'C', b'X', b'D', b'U'] {
             assert!(wire_len(t).unwrap() >= HEADER_LEN);
@@ -631,7 +670,10 @@ mod tests {
         let nc = encode(&msgs[3], &mut c).unwrap();
         assert_eq!(na, nc);
         assert_ne!(a[..na], c[..nc]);
-        assert!(matches!(decode(&a[..na]).unwrap(), ItchMessage::AddOrder(_)));
+        assert!(matches!(
+            decode(&a[..na]).unwrap(),
+            ItchMessage::AddOrder(_)
+        ));
         assert!(matches!(
             decode(&c[..nc]).unwrap(),
             ItchMessage::OrderExecutedWithPrice(_)
@@ -661,7 +703,10 @@ mod tests {
     #[test]
     fn symbols_are_space_padded() {
         assert_eq!(pack_stock_symbol("AAPL").unwrap(), *b"AAPL    ");
-        assert_ne!(pack_stock_symbol("AAPL").unwrap(), [0x41, 0x41, 0x50, 0x4C, 0, 0, 0, 0]);
+        assert_ne!(
+            pack_stock_symbol("AAPL").unwrap(),
+            [0x41, 0x41, 0x50, 0x4C, 0, 0, 0, 0]
+        );
         assert_eq!(pack_stock_symbol("GOOGLE12").unwrap(), *b"GOOGLE12");
         assert_eq!(pack_stock_symbol("TOOLONG12"), None);
     }
@@ -670,21 +715,36 @@ mod tests {
     fn rejects_bad_input() {
         assert_eq!(
             decode_add_order(&GOLDEN[..35]),
-            Err(CodecError::WrongLength { expected: 36, got: 35 })
+            Err(CodecError::WrongLength {
+                expected: 36,
+                got: 35
+            })
         );
         // A 2048-byte buffer passed as `&buf` instead of `&buf[..n]`.
         let mut padded = [0u8; 2048];
         padded[..ADD_ORDER_LEN].copy_from_slice(&GOLDEN);
-        assert!(matches!(decode_add_order(&padded), Err(CodecError::WrongLength { .. })));
-        assert!(matches!(decode(&padded), Err(CodecError::WrongLength { .. })));
+        assert!(matches!(
+            decode_add_order(&padded),
+            Err(CodecError::WrongLength { .. })
+        ));
+        assert!(matches!(
+            decode(&padded),
+            Err(CodecError::WrongLength { .. })
+        ));
 
         let mut wrong_type = GOLDEN;
         wrong_type[0] = b'D';
-        assert_eq!(decode_add_order(&wrong_type), Err(CodecError::UnknownMessageType(b'D')));
+        assert_eq!(
+            decode_add_order(&wrong_type),
+            Err(CodecError::UnknownMessageType(b'D'))
+        );
         // Through dispatch, 'D' is a *known* type — it is the length that is wrong.
         assert_eq!(
             decode(&wrong_type),
-            Err(CodecError::WrongLength { expected: 19, got: 36 })
+            Err(CodecError::WrongLength {
+                expected: 19,
+                got: 36
+            })
         );
 
         let mut unknown = GOLDEN;

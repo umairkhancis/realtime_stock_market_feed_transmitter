@@ -18,17 +18,17 @@ pub fn format_price(scaled: u32) -> String {
     format!("{}.{:04}", scaled / 10_000, scaled % 10_000)
 }
 
-use figlet_rs::FIGfont;
 use colored::*;
+use figlet_rs::FIGfont;
 
 pub fn dramatic_display(message: &str) {
     // Load the standard font (includes built-in 3D shading profiles)
     let font = FIGfont::standard().unwrap();
-    
+
     // Convert your text into an ASCII art layout
     let figure = font.convert(message);
 
-    if let Some(art) = figure {        
+    if let Some(art) = figure {
         // Print the text with a colored shadow effect
         for line in art.to_string().lines() {
             println!("  {}", line.bright_red().bold());

@@ -209,8 +209,14 @@ mod tests {
         }
         let elapsed = start.elapsed();
         // 40 ticks at 500 µs = 19.5 ms to the last deadline.
-        assert!(elapsed >= Duration::from_micros(19_000), "finished early: {elapsed:?}");
-        assert!(elapsed < Duration::from_millis(120), "way over budget: {elapsed:?}");
+        assert!(
+            elapsed >= Duration::from_micros(19_000),
+            "finished early: {elapsed:?}"
+        );
+        assert!(
+            elapsed < Duration::from_millis(120),
+            "way over budget: {elapsed:?}"
+        );
         assert_eq!(p.stats().waits, 40);
     }
 
@@ -228,8 +234,15 @@ mod tests {
         for i in 1..=11 {
             p.wait(i);
         }
-        assert!(resume.elapsed() < Duration::from_millis(5), "the stall was not absorbed");
-        assert!(p.stats().late >= 11, "missed deadlines must be counted, got {}", p.stats().late);
+        assert!(
+            resume.elapsed() < Duration::from_millis(5),
+            "the stall was not absorbed"
+        );
+        assert!(
+            p.stats().late >= 11,
+            "missed deadlines must be counted, got {}",
+            p.stats().late
+        );
         assert!(p.stats().max_lateness >= Duration::from_millis(1));
     }
 

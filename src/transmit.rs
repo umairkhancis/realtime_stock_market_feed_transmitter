@@ -16,7 +16,7 @@ use std::io;
 use std::net::UdpSocket;
 use std::time::Duration;
 
-use crate::codec::{encode, MAX_MESSAGE_LEN};
+use crate::codec::{MAX_MESSAGE_LEN, encode};
 use crate::model::ItchMessage;
 use crate::pacer::{PaceStats, Pacer};
 
@@ -56,13 +56,21 @@ pub struct TransmitReport {
 impl TransmitReport {
     pub fn achieved_rate(&self) -> f64 {
         let secs = self.elapsed.as_secs_f64();
-        if secs > 0.0 { self.sent as f64 / secs } else { 0.0 }
+        if secs > 0.0 {
+            self.sent as f64 / secs
+        } else {
+            0.0
+        }
     }
 
     /// Payload bits per second — ITCH only, no UDP/IP/Ethernet overhead.
     pub fn payload_bps(&self) -> f64 {
         let secs = self.elapsed.as_secs_f64();
-        if secs > 0.0 { self.bytes as f64 * 8.0 / secs } else { 0.0 }
+        if secs > 0.0 {
+            self.bytes as f64 * 8.0 / secs
+        } else {
+            0.0
+        }
     }
 
     /// Bits per second actually on the wire: every datagram also carries 8
@@ -136,7 +144,11 @@ pub fn transmit(feed: &EncodedFeed, cfg: &TransmitConfig) -> io::Result<Transmit
         feed.len(),
         sock.local_addr()?,
         cfg.rate_hz,
-        Duration::from_nanos(if cfg.rate_hz == 0 { 0 } else { 1_000_000_000 / cfg.rate_hz }),
+        Duration::from_nanos(if cfg.rate_hz == 0 {
+            0
+        } else {
+            1_000_000_000 / cfg.rate_hz
+        }),
     );
 
     let mut pacer = Pacer::new(cfg.rate_hz);
@@ -194,9 +206,15 @@ pub fn transmit(feed: &EncodedFeed, cfg: &TransmitConfig) -> io::Result<Transmit
 
 pub fn print_report(report: &TransmitReport) {
     println!();
-    println!("  sent            {} datagrams, {} payload bytes", report.sent, report.bytes);
+    println!(
+        "  sent            {} datagrams, {} payload bytes",
+        report.sent, report.bytes
+    );
     println!("  elapsed         {:.3}s", report.elapsed.as_secs_f64());
-    println!("  achieved rate   {:.0} msg/s ( = packets/s, 1:1)", report.achieved_rate());
+    println!(
+        "  achieved rate   {:.0} msg/s ( = packets/s, 1:1)",
+        report.achieved_rate()
+    );
     println!(
         "  payload         {:.2} Mbps ITCH, {:.2} Mbps on the wire with UDP/IP/Ethernet framing",
         report.payload_bps() / 1e6,
@@ -209,10 +227,16 @@ pub fn print_report(report: &TransmitReport) {
         report.pacing.max_lateness.as_nanos() as f64 / 1000.0,
     );
     if report.send_errors > 0 {
-        println!("  send errors     {} datagrams the kernel refused", report.send_errors);
+        println!(
+            "  send errors     {} datagrams the kernel refused",
+            report.send_errors
+        );
     }
     if report.short_sends > 0 {
-        println!("  SHORT SENDS     {} — the kernel truncated a datagram", report.short_sends);
+        println!(
+            "  SHORT SENDS     {} — the kernel truncated a datagram",
+            report.short_sends
+        );
     }
     println!();
     println!("  send() succeeding means the kernel accepted the datagram, not that it arrived.");
@@ -227,7 +251,11 @@ mod tests {
     use crate::market::{MarketConfig, MarketSimulator};
 
     fn feed(count: u64) -> Vec<ItchMessage> {
-        MarketSimulator::new(MarketConfig { count, ..Default::default() }).collect()
+        MarketSimulator::new(MarketConfig {
+            count,
+            ..Default::default()
+        })
+        .collect()
     }
 
     #[test]
@@ -237,8 +265,16 @@ mod tests {
         assert_eq!(encoded.len(), msgs.len());
         for (i, msg) in msgs.iter().enumerate() {
             let datagram = encoded.datagram(i);
-            assert_eq!(datagram.len(), msg.wire_len(), "datagram {i} is the wrong length");
-            assert_eq!(&decode(datagram).unwrap(), msg, "datagram {i} decoded differently");
+            assert_eq!(
+                datagram.len(),
+                msg.wire_len(),
+                "datagram {i} is the wrong length"
+            );
+            assert_eq!(
+                &decode(datagram).unwrap(),
+                msg,
+                "datagram {i} decoded differently"
+            );
         }
         let expected: usize = msgs.iter().map(|m| m.wire_len()).sum();
         assert_eq!(encoded.total_bytes(), expected);
@@ -257,7 +293,9 @@ mod tests {
     #[test]
     fn round_trips_over_loopback_one_message_per_datagram() {
         let receiver = UdpSocket::bind("127.0.0.1:0").unwrap();
-        receiver.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        receiver
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
         // A generous receive buffer: this test sends everything before reading
         // a single datagram, so the socket has to hold the whole burst.
         let dest = receiver.local_addr().unwrap();

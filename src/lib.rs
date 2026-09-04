@@ -34,7 +34,7 @@ use std::time::Duration;
 use codec::{ADD_ORDER_LEN, encode_add_order};
 use feed::{read_feed, write_feed, write_symbol_table};
 use formatter::{format_price, hex};
-use market::{DEFAULT_INTERVAL_NANOS, DEFAULT_MESSAGE_COUNT, MarketConfig, MarketSimulator};
+use market::{MarketConfig, MarketSimulator};
 use model::{
     ItchAddOrder, ItchMessage, pack_itch_timestamp, pack_stock_symbol, unpack_stock_symbol,
 };

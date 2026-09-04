@@ -24,6 +24,7 @@ pub mod rng;
 pub mod summary;
 pub mod transmit;
 
+use std::error::Error;
 use std::fs::{self, File};
 use std::io::{self, BufReader, BufWriter, Write};
 use std::net::{SocketAddr, ToSocketAddrs, UdpSocket};
@@ -51,38 +52,31 @@ pub type Fallible = Result<(), Box<dyn std::error::Error>>;
 // ---------------------------------------------------------------------------
 
 pub fn cmd_gen(args: &Args) -> Fallible {
-    let out = PathBuf::from(args.get("out").unwrap_or(DEFAULT_CSV));
-    let config = args.market_config()?;
-
+    // Prepare for writing generated feed.
+    // Default config is 100,000 messages at 10,000 messages/second (100 µs apart).
+    let config = MarketConfig::default();
+    let out = PathBuf::from(DEFAULT_CSV);
     if let Some(parent) = out.parent() {
         if !parent.as_os_str().is_empty() {
             fs::create_dir_all(parent)?;
         }
     }
-
     println!(
         "generating {} messages, seed {:#018x}, {} ns apart",
         config.count, config.seed, config.interval_nanos
     );
 
+    // Generate market messages in memory, then write them to CSV.
+    // This is not the most memory-efficient way to do it, but it is simple and
+    // the default count is small enough that it does not matter.
+    // But if you want to generate a billion messages, you can do that too, and it will
+    // stream them to CSV without ever holding them all in memory at once.
+    // How? By using `MarketSimulator::new(config).for_each(|msg| write_feed(&mut file, std::iter::once(msg)))` instead of collecting them into a `Vec`.
+    // But that is not the default because it is more complex and less convenient for the user.
+    // The default is to generate a small number of messages in memory, then write them to CSV.
     let messages: Vec<ItchMessage> = MarketSimulator::new(config).collect();
-
-    println!(
-        "writing {} messages to {} ({} bytes)",
-        messages.len(),
-        out.display(),
-        messages.len() * ADD_ORDER_LEN
-    );
-
-    let mut file = BufWriter::new(File::create(&out)?);
-    let rows = write_feed(&mut file, messages.iter().copied())?;
-    file.flush()?;
-
-    let symbols_path = symbols_path(&out);
-    let mut symbols = BufWriter::new(File::create(&symbols_path)?);
-    write_symbol_table(&mut symbols)?;
-    symbols.flush()?;
-
+    let rows = write_feed_to_csv(&out, &messages)?;
+    let symbols_path = write_symbol_table_to_csv(&out)?;
     println!(
         "wrote {rows} rows to {} ({} bytes) and the locate map to {}",
         out.display(),
@@ -95,6 +89,31 @@ pub fn cmd_gen(args: &Args) -> Fallible {
         summary::summarise(&messages);
     }
     Ok(())
+}
+
+// Write the symbol table to a separate CSV file, beside the feed CSV.
+// Why Symbol table? Because the feed CSV contains only the messages,
+// and the symbol table contains the mapping from stock symbols to their packed representation.
+// The receiver needs both to decode the feed correctly.
+// The symbol table is written to a separate CSV file so that it can be reused across multiple feeds,
+// and so that it can be updated independently of the feed.
+fn write_symbol_table_to_csv(out: &PathBuf) -> Result<PathBuf, Box<dyn Error + 'static>> {
+    let symbols_path = symbols_path(out);
+    let mut symbols = BufWriter::new(File::create(&symbols_path)?);
+    write_symbol_table(&mut symbols)?;
+    symbols.flush()?;
+    Ok(symbols_path)
+}
+
+/// Write the feed to CSV, returning the number of rows written.
+fn write_feed_to_csv(
+    out: &PathBuf,
+    messages: &Vec<ItchMessage>,
+) -> Result<u64, Box<dyn Error + 'static>> {
+    let mut file = BufWriter::new(File::create(out)?);
+    let rows = write_feed(&mut file, messages.iter().copied())?;
+    file.flush()?;
+    Ok(rows)
 }
 
 pub fn cmd_send(args: &Args) -> Fallible {
@@ -370,4 +389,3 @@ mod tests {
         assert_eq!(read_feed(csv.as_slice()).unwrap(), generated);
     }
 }
-
